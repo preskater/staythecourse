@@ -106,6 +106,16 @@ const SECRET_PATTERNS: readonly RegExp[] = [
   /\b(?:api[_-]?key|secret|token|password)\s*[:=]\s*\S{8,}/i,
 ];
 
+/**
+ * True when a free-form identifier looks like a credential.
+ *
+ * Shared with the ledger dimensions: a token pasted into `issueId` must be refused
+ * just like one pasted into a source reference.
+ */
+export function looksLikeSecret(value: string): boolean {
+  return SECRET_PATTERNS.some((pattern) => pattern.test(value));
+}
+
 const PROVIDER_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/;
 const ISO_INSTANT_PATTERN =
@@ -126,7 +136,7 @@ function toReferenceText(field: string, value: unknown): string {
     throw new InvalidCostSourceError(field, "control characters are not allowed");
   }
 
-  if (SECRET_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+  if (looksLikeSecret(trimmed)) {
     throw new UnsafeSourceReferenceError(field);
   }
 

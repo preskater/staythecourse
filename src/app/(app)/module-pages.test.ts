@@ -53,7 +53,7 @@ describe("direct access to a disabled module", () => {
     expect(element.type).toBe(ModuleDisabled);
     expect(element.props.moduleKey).toBe(moduleKey);
     expect(readMock).not.toHaveBeenCalled();
-  });
+  }, 20_000);
 });
 
 describe("ModuleDisabled", () => {

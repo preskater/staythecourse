@@ -6,6 +6,9 @@
  * source's capture instant so it cannot be rewritten later.
  */
 export * from "./actuality";
+export * from "./allocation";
 export * from "./amount";
+export * from "./dimensions";
+export * from "./ledger";
 export * from "./money";
 export * from "./source";
