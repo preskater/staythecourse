@@ -22,7 +22,7 @@ the pages that consume it.
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
 | `dashboard` | Read-only aggregation for the home page. | `queries.ts` |
-| `audit` | Append-only trail of security-sensitive and data-changing actions (exports today). Codes, counts and calendar days only. | `domain.ts`, `repository.ts` |
+| `audit` | Append-only trail of security-sensitive and data-changing actions: authentication, credentials, ledger writes, rates, modules, integrations, exports and operator procedures. Codes, references, counts and calendar days only. | `domain.ts`, `repository.ts` |
 
 Cross-cutting code sits in `src/lib` (`db`, `env`, `money`, `dates`, `csv`,
 `crypto`, `auth`). Background work sits in `src/jobs` and is triggered from
@@ -1001,30 +1001,44 @@ cursor and a chunked response; the header is what makes the cut visible until th
 single-month budget export is bounded by its own shape (one row per category and
 currency).
 
-### Audit of exports (SO-02)
+### Audit trail (SO-02 / M18-02)
 
-Every delivered file writes one `AuditEvent` row: the workspace, the actor, the action
-code (`export.transactions`, `export.properties`, `export.budgets`, `export.goals`,
-`export.alerts`), `entityType: "EXPORT"`, the outcome, and metadata limited to the
-resolved scope, the bounds, the row count and the truncation flag. Metadata passes
-through `redactAuditMetadata` (`src/modules/audit/domain.ts`), which drops a sensitive key
-outright (`token`, `email`, `label`, `amount`, …) and replaces free text with
-`[redacted]`, so the trail never becomes a second copy of the ledger.
+Every security-sensitive or data-changing action writes one `AuditEvent` row: the
+workspace, the actor, a stable action code, a coarse `entityType` and optional
+`entityId`, the outcome (`SUCCESS`, `REFUSED` or `FAILED`) and safe metadata. The
+vocabulary covers authentication and password changes, transaction creation, edition,
+deletion, transfers, reconciliation and salary booking, salary rates, module toggles,
+provider connections and synchronisations, exports, and the operator backup/restore
+commands. There is one writer — `recordAuditEvent` in
+`src/modules/audit/repository.ts` — imported by Server Actions and jobs; nothing in the
+browser can reach it.
 
-The entry is written after the read and **before** the response: a failed write answers
-500 and withholds the file, because an export the trail does not know about is worse than
-an export delayed by a database error. Nothing in the application exposes an update or a
-delete of `AuditEvent`, so the trail is append-only in practice, not only by convention.
+Metadata passes through `redactAuditMetadata` (`src/modules/audit/domain.ts`), which drops
+a sensitive key outright (`token`, `password`, `hash`, `credential`, `email`, `label`,
+`amount`, `url`, …), drops a credential-shaped value even under an innocent key, and
+replaces other free text with `[redacted]`. An entity identifier that is really free text
+or a credential is dropped as well. The trail therefore carries references, counts
+and calendar days only: it never becomes a second copy of the ledger. Denials store a
+denial code at most (`INVALID_CREDENTIALS`, `NOT_FOUND`, …), never the submitted address
+or password.
 
-A refused export — an invalid window or an unknown `entity` — is not recorded: it reads
-nothing, and logging every malformed link would let a client fill the trail. The
-vocabulary reserves `REFUSED` and `FAILED` for writers that modify data and must state
-that they did not.
+Two failure policies share the one helper. An export is written **before** the response:
+a failed write answers 500 and withholds the file, because an export the trail does not
+know about is worse than an export delayed by a database error. A writer that has already
+committed a change uses `recordAuditEventSafely`: it logs the error type without the
+payload and never disguises a committed ledger row as a failed action. A refused export —
+an invalid window or an unknown `entity` — is not recorded: it reads nothing, and logging
+every malformed link would let a client fill the trail.
 
-Retention: rows are **not pruned yet**. They are cheap (codes, counts and calendar days,
-no payload), and their bound belongs to the retention work of M18, which will reuse the
-cutoff helper already used by `SyncRun` (`src/jobs/retention.ts`). Until that job exists,
-a manual `DELETE` scoped by `workspaceId` and `createdAt` is the documented procedure.
+The `/audit` page reads one bounded page of the session workspace's own rows, most recent
+first. It is a Server Component: there is no Server Action, Route Handler or client form
+that updates or deletes an `AuditEvent`, and an invariant test pins both the single insert
+site and the absence of any other mutation.
+
+Retention (DR-05): entries are kept for 365 days (`AUDIT_RETENTION_DAYS`).
+`npm run db:cleanup` calls `cleanUpAuditEvents`, which deletes by `workspaceId` and
+`createdAt` only, workspace by workspace, and is safe to re-run. This operator job is the
+only deletion path in the repository; nothing schedules it from the web process.
 
 ## Synchronisation
 

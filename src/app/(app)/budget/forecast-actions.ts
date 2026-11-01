@@ -10,6 +10,7 @@ import {
 } from "@/lib/actions";
 import { requireModule } from "@/lib/auth/guard";
 import { recordIdInput } from "@/lib/validation";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { categoryMismatchReason, type CategorySummary } from "@/modules/budget/domain";
 import {
   ALREADY_CONFIRMED_MESSAGE,
@@ -286,6 +287,16 @@ export async function confirmRecurringOccurrenceAction(values: unknown): Promise
       operationDate: occurrence.date,
       notes: null,
       externalRef: forecastOccurrenceRef(occurrence.id),
+    });
+
+    await recordAuditEventSafely({
+      workspaceId: user.workspace.id,
+      actorId: user.id,
+      action: "transaction.create",
+      entityType: "TRANSACTION",
+      entityId: transaction.id,
+      outcome: "SUCCESS",
+      metadata: { type: entry.type, currency: resolved.account.currency, source: "forecast" },
     });
 
     const decided = await decideRecurringOccurrence(user.workspace.id, occurrence.id, {

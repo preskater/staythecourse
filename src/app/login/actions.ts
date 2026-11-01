@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { signIn } from "@/auth";
 import { getSessionUser } from "@/lib/auth/guard";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { revokeSession } from "@/modules/identity/sessions";
 
 /** Sign-in and sign-out actions. Both run on the server only. */
@@ -48,6 +49,14 @@ export async function signOutAction(): Promise<void> {
     const user = await getSessionUser();
     if (user) {
       await revokeSession(user.id, user.sessionId);
+      await recordAuditEventSafely({
+        workspaceId: user.workspace.id,
+        actorId: user.id,
+        action: "auth.sign_out",
+        entityType: "SESSION",
+        entityId: user.sessionId,
+        outcome: "SUCCESS",
+      });
     }
   } catch (error) {
     console.error(

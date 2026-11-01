@@ -10,7 +10,9 @@ import {
 } from "@/lib/actions";
 import { requireModule } from "@/lib/auth/guard";
 import { formatMonthLabel, monthRange, parseMonthKey, shiftMonthKey } from "@/lib/dates";
+import type { Currency } from "@/lib/money";
 import { recordIdInput } from "@/lib/validation";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import {
   accountArchiveSchema,
   accountInputSchema,
@@ -160,8 +162,9 @@ export async function createTransactionAction(values: unknown): Promise<ActionRe
     return resolved.result;
   }
 
+  let transactionId: string;
   try {
-    await createTransaction({
+    const created = await createTransaction({
       workspaceId: user.workspace.id,
       accountId: resolved.account.id,
       categoryId: input.categoryId,
@@ -175,9 +178,20 @@ export async function createTransactionAction(values: unknown): Promise<ActionRe
       // has no source, so the uniqueness rule never blocks it.
       externalRef: null,
     });
+    transactionId = created.id;
   } catch (error) {
     return unexpectedResult("createTransaction", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.create",
+    entityType: "TRANSACTION",
+    entityId: transactionId,
+    outcome: "SUCCESS",
+    metadata: { type: input.type, currency: resolved.account.currency },
+  });
 
   revalidatePath("/budget");
   revalidatePath("/dashboard");
@@ -284,6 +298,16 @@ export async function updateTransactionAction(values: unknown): Promise<ActionRe
     return unexpectedResult("updateTransaction", error);
   }
 
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.update",
+    entityType: "TRANSACTION",
+    entityId: input.id,
+    outcome: "SUCCESS",
+    metadata: { type: input.type, currency: resolved.account.currency },
+  });
+
   revalidatePath("/budget");
   revalidatePath("/dashboard");
   return { status: "ok" };
@@ -325,6 +349,16 @@ export async function deleteTransactionAction(values: unknown): Promise<ActionRe
   } catch (error) {
     return unexpectedResult("deleteTransaction", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.delete",
+    entityType: "TRANSACTION",
+    entityId: parsed.data.id,
+    outcome: "SUCCESS",
+    metadata: { grouped },
+  });
 
   revalidatePath("/budget");
   revalidatePath("/dashboard");
@@ -492,6 +526,7 @@ export async function saveSalarySettingAction(values: unknown): Promise<ActionRe
 
   const { year, month } = parsed.data.month;
 
+  let wroteRate = false;
   try {
     const rates = await listSalaryRates(user.workspace.id);
     const current = resolveSalaryRate(rates, year, month);
@@ -503,6 +538,7 @@ export async function saveSalarySettingAction(values: unknown): Promise<ActionRe
         month,
         hourlyRate: parsed.data.hourlyRate,
       });
+      wroteRate = true;
     }
 
     await upsertSalarySetting({
@@ -512,6 +548,18 @@ export async function saveSalarySettingAction(values: unknown): Promise<ActionRe
     });
   } catch (error) {
     return unexpectedResult("saveSalarySetting", error);
+  }
+
+  if (wroteRate) {
+    await recordAuditEventSafely({
+      workspaceId: user.workspace.id,
+      actorId: user.id,
+      action: "rate.write",
+      entityType: "SALARY_RATE",
+      entityId: `${year}-${String(month).padStart(2, "0")}`,
+      outcome: "SUCCESS",
+      metadata: { year, month, currency: parsed.data.currency },
+    });
   }
 
   revalidatePath("/budget");
@@ -640,6 +688,8 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
 
   const { month, accountId, date } = parsed.data;
 
+  let transactionId: string;
+  let salaryCurrency: Currency;
   try {
     const [setting, account, rates] = await Promise.all([
       findSalarySetting(user.workspace.id),
@@ -669,6 +719,7 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
         `Le salaire est en ${setting.currency} : choisissez un compte dans cette devise, aucune conversion n'est faite.`,
       );
     }
+    salaryCurrency = account.currency;
 
     const reference = salaryBookingRef(month.year, month.month);
     const existing = await findTransactionByExternalRef(user.workspace.id, reference);
@@ -693,7 +744,7 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
       kind: "INCOME",
     });
 
-    await createTransaction({
+    const created = await createTransaction({
       workspaceId: user.workspace.id,
       accountId: account.id,
       categoryId: category.id,
@@ -707,6 +758,7 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
       notes: null,
       externalRef: reference,
     });
+    transactionId = created.id;
   } catch (error) {
     // The unique index is the race guard for two clicks crossing between the pre-check
     // and the write; it answers with the same message as the pre-check.
@@ -716,6 +768,19 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
 
     return unexpectedResult("bookSalary", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.salary_book",
+    entityType: "TRANSACTION",
+    entityId: transactionId,
+    outcome: "SUCCESS",
+    metadata: {
+      month: `${month.year}-${String(month.month).padStart(2, "0")}`,
+      currency: salaryCurrency,
+    },
+  });
 
   revalidatePath("/budget");
   revalidatePath("/dashboard");
@@ -989,6 +1054,8 @@ export async function createTransferAction(values: unknown): Promise<ActionResul
 
   const input = parsed.data;
 
+  let transfer: { groupId: string; transactionIds: string[] };
+  let currency: Currency;
   try {
     const [from, to] = await Promise.all([
       findAccount(user.workspace.id, input.fromAccountId),
@@ -1013,11 +1080,12 @@ export async function createTransferAction(values: unknown): Promise<ActionResul
       ? { source: input.label, destination: input.label }
       : defaultTransferLabels(from.name, to.name);
 
-    await createTransferGroup({
+    currency = from.currency;
+    transfer = await createTransferGroup({
       workspaceId: user.workspace.id,
       fromAccountId: from.id,
       toAccountId: to.id,
-      currency: from.currency,
+      currency,
       amount: input.amount,
       operationDate: input.operationDate,
       sourceLabel: labels.source,
@@ -1027,6 +1095,16 @@ export async function createTransferAction(values: unknown): Promise<ActionResul
   } catch (error) {
     return unexpectedResult("createTransfer", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.transfer",
+    entityType: "TRANSFER",
+    entityId: transfer.groupId,
+    outcome: "SUCCESS",
+    metadata: { currency, legs: transfer.transactionIds.length },
+  });
 
   revalidatePath("/budget");
   revalidatePath("/dashboard");
@@ -1065,6 +1143,16 @@ export async function setTransactionReconciledAction(values: unknown): Promise<A
   } catch (error) {
     return unexpectedResult("setTransactionReconciled", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.reconcile",
+    entityType: "TRANSACTION",
+    entityId: parsed.data.id,
+    outcome: "SUCCESS",
+    metadata: { reconciled: parsed.data.reconciled },
+  });
 
   revalidatePath("/budget");
   return { status: "ok" };

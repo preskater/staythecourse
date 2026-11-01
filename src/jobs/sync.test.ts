@@ -17,6 +17,11 @@ const listCacheEntriesMock = vi.fn();
 const saveCacheChecksMock = vi.fn();
 const saveCiRunsMock = vi.fn();
 const listCiRunsMock = vi.fn();
+const recordAuditEventSafelyMock = vi.fn();
+
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditEventSafelyMock(...args),
+}));
 
 vi.mock("@/modules/integrations/repository", () => ({
   findConnectionForSync: (...args: unknown[]) => findConnectionForSyncMock(...args),
@@ -137,6 +142,7 @@ describe("synchroniseConnection run history", () => {
     saveCacheChecksMock.mockReset().mockResolvedValue(undefined);
     listCiRunsMock.mockReset().mockResolvedValue(CI_OUTCOME);
     saveCiRunsMock.mockReset().mockResolvedValue({ created: 0, updated: 0 });
+    recordAuditEventSafelyMock.mockReset().mockResolvedValue(undefined);
   });
 
   it("records a successful run with its counters", async () => {
@@ -161,6 +167,18 @@ describe("synchroniseConnection run history", () => {
       retries: 0,
     });
     expect(markSyncSuccessMock).toHaveBeenCalledWith("connection-1", FETCHED_AT);
+
+    const [audit] = recordAuditEventSafelyMock.mock.calls[0] as [Record<string, unknown>];
+    expect(audit).toMatchObject({
+      workspaceId: "owner-1",
+      actorId: null,
+      action: "integration.sync",
+      entityType: "INTEGRATION",
+      entityId: "connection-1",
+      outcome: "SUCCESS",
+      metadata: { provider: "GITHUB", status: "SUCCESS", fetched: 3, retries: 0 },
+    });
+    expect(JSON.stringify(audit)).not.toContain(CONNECTION.token);
   });
 
   it("closes the run as partial when repositories were left unread", async () => {
@@ -376,6 +394,17 @@ describe("synchroniseConnection run history", () => {
     const persisted = JSON.stringify(finishSyncRunMock.mock.calls);
     expect(persisted).not.toContain("ghp_fictitious_token");
     expect(persisted).not.toContain("boom");
+
+    const [audit] = recordAuditEventSafelyMock.mock.calls[0] as [Record<string, unknown>];
+    expect(audit).toMatchObject({
+      action: "integration.sync",
+      entityId: "connection-1",
+      outcome: "FAILED",
+      metadata: { provider: "GITHUB", code: "HTTP_ERROR" },
+    });
+    // The safe code is the whole message: neither the provider text nor the token.
+    expect(JSON.stringify(audit)).not.toContain("ghp_fictitious_token");
+    expect(JSON.stringify(audit)).not.toContain("boom");
   });
 
   it("retries transient failures and reports the retry count", async () => {

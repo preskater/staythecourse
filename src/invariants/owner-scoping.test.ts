@@ -151,6 +151,7 @@ const MODULES = {
   budget: () => import("@/modules/budget/repository"),
   realEstate: () => import("@/modules/real-estate/repository"),
   alerts: () => import("@/modules/alerts/repository"),
+  audit: () => import("@/modules/audit/repository"),
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
 };
