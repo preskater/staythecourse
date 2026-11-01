@@ -24,6 +24,7 @@ const table = {
 
 const prisma = {
   account: table,
+  exchangeRateSnapshot: table,
   property: table,
   propertyLoan: table,
   propertyValuation: { create: createValuationMock },
@@ -40,6 +41,9 @@ const { createAccount, findAccount } = await import("./budget/repository");
 const { deleteLoan, findProperty, updateProperty } = await import("./real-estate/repository");
 const { dismissAlert, listAlerts } = await import("./alerts/repository");
 const { findConnectionForSync, listIssues } = await import("./integrations/repository");
+const { findExchangeRateSnapshotById, recordExchangeRate } = await import(
+  "./ai-costs/repository"
+);
 
 const FOREIGN = "ws-someone-else";
 
@@ -125,5 +129,38 @@ describe("integrations", () => {
   it("scopes snapshots through their connection", async () => {
     await listIssues("ws-1");
     expect(where(findManyMock)).toMatchObject({ connection: { workspaceId: "ws-1" } });
+  });
+});
+
+describe("ai-costs", () => {
+  it("reads a foreign workspace's exchange rate as not found", async () => {
+    expect(await findExchangeRateSnapshotById(FOREIGN, "rate-1")).toBeNull();
+    expect(where(findFirstMock)).toEqual({ id: "rate-1", workspaceId: FOREIGN });
+  });
+
+  it("writes a rate into the given workspace only", async () => {
+    createMock.mockResolvedValueOnce({
+      id: "rate-1",
+      baseCurrency: "USD",
+      quoteCurrency: "EUR",
+      rate: new Decimal("0.92"),
+      rateDate: new Date("2026-10-28T00:00:00.000Z"),
+      source: { kind: "manual", enteredBy: "user-1", capturedAt: "2026-10-28T12:00:00.000Z" },
+      recordedAt: new Date("2026-10-28T12:00:00.000Z"),
+    });
+
+    await recordExchangeRate({
+      workspaceId: "ws-1",
+      baseCurrency: "USD",
+      quoteCurrency: "EUR",
+      rate: "0.92",
+      rateDate: "2026-10-28",
+      source: { kind: "manual", enteredBy: "user-1" },
+      recordedAt: "2026-10-28T12:00:00.000Z",
+    });
+
+    expect(createMock.mock.calls[0][0]).toMatchObject({
+      data: { workspaceId: "ws-1", baseCurrency: "USD", quoteCurrency: "EUR" },
+    });
   });
 });

@@ -17,7 +17,7 @@ the pages that consume it.
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing and property indicators. | `domain.ts`, `kpis.ts`, `repository.ts` |
-| `ai-costs` | Exact cost amounts, each with a mandatory actuality and an immutable source reference. Primitives only: no persistence, provider call or allocation yet (M9-01). | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts` |
+| `ai-costs` | Exact cost amounts, each with a mandatory actuality and an immutable source reference (M9-01), and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). No provider call or allocation yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `exchange.ts`, `repository.ts` |
 | `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots. | `domain.ts`, `adapter.ts`, `github.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
@@ -147,6 +147,23 @@ asked for: a cascade here would silently change what a property is worth.
   answer different questions and are never derived from one another. Source references
   are frozen, hold identifiers only, and reject token-shaped values, so a secret is
   never stored as a source.
+- **Exchange rates** are stored as **snapshots** (`ExchangeRateSnapshot`), never as a
+  mutable setting. A snapshot is one pair (`baseCurrency`/`quoteCurrency` read "1 base is
+  worth `rate` quote"), an exact rate with ten decimals, the calendar day it is in force
+  for (`rateDate`), the instant it was written (`recordedAt`) and the ledger's frozen
+  source reference. The rate is never rounded on the way in; the converted amount is
+  rounded **half-up to the cent** once, by `costMoney` (M9-01), and the original amount
+  and currency are always kept beside it. A converted figure carries the snapshot it
+  used (`Conversion.snapshot.id`), so recording a newer rate — a correction, or a rate
+  observed later the same day — only affects conversions made afterwards; nothing
+  already computed is rewritten. A lookup takes the latest snapshot of the pair dated on
+  or before the amount's day, ties broken by `recordedAt` then identifier; a day before
+  the first snapshot has **no** rate and the amount stays unknown, never converted with a
+  guessed, implicit or reversed rate (the opposite pair is recorded explicitly, because
+  an exact inverse is a repeating decimal). Rates enter through `recordExchangeRate`
+  (manual entry today, CSV import when M9-05 lands) — there is no live rate feed, and no
+  rate is ever inferred. Snapshots are workspace-scoped and are never updated or deleted
+  in code.
 - **Imports** are made re-runnable by a unique constraint on
   `(accountId, externalRef)`: replaying an import fails loudly instead of
   duplicating a line. The manual CSV import (page « Importer un CSV », see below) uses

@@ -391,7 +391,7 @@ src/
   app/                 # pages, layouts, Route Handlers, Server Actions
   components/          # interface components
   modules/             # business rules, per module
-    identity/ budget/ real-estate/ integrations/ alerts/ catalog/ search/ dashboard/
+    identity/ budget/ real-estate/ integrations/ alerts/ ai-costs/ audit/ catalog/ search/ dashboard/
   lib/                 # database, configuration, cross-cutting utilities
   jobs/                # synchronisation tasks run server-side
   generated/prisma/    # generated client, not committed
@@ -417,6 +417,11 @@ compose.yaml
   currency of its account, which is never asked for twice.
 - A property cashflow is either a typed amount **or** a link to a transaction,
   never both: otherwise the same money would be counted twice.
+- A currency conversion uses a stored **rate snapshot** (exact rate, its source and its
+  date), never a live feed or a guessed rate. The original amount and currency are kept,
+  the converted figure references the snapshot it used, and recording a newer rate never
+  changes a value already computed. Without a rate for the pair and the day, the amount
+  stays unknown rather than being converted implicitly.
 - The write forms validate in the browser with zod (react-hook-form) and the
   Server Action validates the same payload again before touching the database.
 
