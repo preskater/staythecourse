@@ -52,3 +52,12 @@ export function resolveActiveWorkspace(
 export function canManageModules(role: WorkspaceRole): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
+
+/**
+ * Commercial records (clients, projects) are readable by every member of the workspace,
+ * but only its owner and admins write them: they carry billing terms and personal
+ * contact details. M7-05 will replace this coarse split with its permission presets.
+ */
+export function canManageBusinessRecords(role: WorkspaceRole): boolean {
+  return role === "OWNER" || role === "ADMIN";
+}

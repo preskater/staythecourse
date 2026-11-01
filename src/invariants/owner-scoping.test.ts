@@ -150,6 +150,7 @@ function placeholderFor(key: string, date: Date): unknown {
 const MODULES = {
   budget: () => import("@/modules/budget/repository"),
   realEstate: () => import("@/modules/real-estate/repository"),
+  microBusiness: () => import("@/modules/micro-business/repository"),
   alerts: () => import("@/modules/alerts/repository"),
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
