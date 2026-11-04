@@ -13,7 +13,7 @@ the pages that consume it.
 
 | Module | Responsibility | Key files |
 | --- | --- | --- |
-| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`). No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts` |
+| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`). No public sign-up: the account, its personal workspace, the membership that reaches it and its starting modules are created by the seed script. | `repository.ts`, `workspace.ts` |
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing and property indicators. | `domain.ts`, `kpis.ts`, `repository.ts` |
@@ -194,7 +194,10 @@ asked for: a cascade here would silently change what a property is worth.
   The goals' « Progression » footer is the group's **weighted accomplishment**,
   `Σcurrent ÷ Σtarget × 100` (one decimal, half-up — the same rule as a single goal, and
   never the mean of the row percentages, which would weigh a 5 € goal like a 5 000 € one);
-  a non-positive sum reads 0 %.
+  a non-positive sum reads 0 %. A linked account shared by several goals is **one pot of
+  money**: its balance enters `Σcurrent` once (and the « Reste » footer follows,
+  `Σtarget − Σcurrent`), while every target and every row's own monthly ask keeps counting
+  in full — the money set aside is counted once, the projects it funds stay separate.
   A footer reads « — » as soon as one of its rows holds an unknown amount (an account with
   no operation, an automatic threshold, a goal without a source or with a passed deadline,
   a category without an average): the known rows are still summed, but an unknown is never
@@ -367,6 +370,11 @@ asked for: a cascade here would silently change what a property is worth.
     zero months left it is the whole remaining amount (the deadline is now), and it is
     not defined once the target date has passed or the goal is reached — the table states
     the reason instead of a figure. The division is guarded, never a division by zero.
+  - *group total* — the footer sums every target and every row's own monthly ask, but a
+    linked account shared by several goals contributes its balance **once**: the money is
+    one pot, the projects it funds are distinct. The « Reste » total is therefore
+    `Σtarget − Σcurrent`, and it no longer equals the sum of the rows' own « Reste »,
+    which each show the account covering them.
 - Savings threshold (budget page, « Objectifs » tab, above the goals) — the cushion a
   savings account should hold, computed, never stored:
   - *window* — **six calendar months starting with the current one** (`savingsWindow`):

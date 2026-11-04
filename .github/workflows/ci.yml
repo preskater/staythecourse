@@ -60,6 +60,22 @@ jobs:
       - name: Apply migrations on a fresh database
         run: npm run db:deploy
 
+      # M7-06: a fresh stack must come out of the seed usable, and the seed runs on
+      # every `up`, so a second run must add nothing. The database service above is
+      # throwaway and every value here is fictitious.
+      - name: Seed twice on a fresh database
+        env:
+          SEED_OWNER_EMAIL: owner@example.test
+          SEED_OWNER_PASSWORD: Fictitious-Seed-Password-2026
+          SEED_OWNER_NAME: Proprietaire fictif
+          SEED_OWNER_FORCE_PASSWORD: "false"
+          SEED_WORKSPACE_NAME: Personnel
+          SEED_WORKSPACE_MODULES: budget,real-estate,development
+        run: |
+          npm run db:seed
+          npm run db:seed
+          npm run db:seed:check
+
       - name: Build
         run: npm run build
 

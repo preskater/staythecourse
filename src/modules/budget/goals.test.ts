@@ -413,4 +413,58 @@ describe("summariseGoalTotals", () => {
 
     expect(totals.get("EUR")?.nextDeadline.toISOString().slice(0, 10)).toBe("2027-03-15");
   });
+
+  /** A goal whose current amount is the recorded balance of one linked account. */
+  function linked(partial: Partial<GoalRecord>, accountId: string, balance: string) {
+    const record = goal({ accountId, accountName: accountId, ...partial });
+    return {
+      goal: record,
+      progress: computeGoalProgress(record, new Decimal(balance), { now: NOW }),
+    };
+  }
+
+  it("counts an account shared by several goals once, but every target in full", () => {
+    const eur = summariseGoalTotals(
+      rows(
+        linked({ id: "a", targetAmount: new Decimal("400") }, "account-1", "350"),
+        linked({ id: "b", targetAmount: new Decimal("800") }, "account-1", "350"),
+      ),
+    ).get("EUR");
+
+    // 400 + 800 of targets, 350 € set aside once — not 700 €.
+    expect(eur?.goalCount).toBe(2);
+    expect(eur?.target.toFixed(2)).toBe("1200.00");
+    expect(eur?.current.toFixed(2)).toBe("350.00");
+    expect(eur?.remaining.toFixed(2)).toBe("850.00");
+    expect(eur?.percentage?.toFixed(1)).toBe("29.2");
+    expect(eur?.sharedAccount).toBe(true);
+    // Each row still states its own monthly ask: 50 ÷ 8 + 450 ÷ 8.
+    expect(eur?.monthlyContribution?.toFixed(2)).toBe("62.50");
+  });
+
+  it("counts goals on two different accounts in full", () => {
+    const eur = summariseGoalTotals(
+      rows(
+        linked({ id: "a", targetAmount: new Decimal("400") }, "account-1", "350"),
+        linked({ id: "b", targetAmount: new Decimal("800") }, "account-2", "350"),
+        known({ id: "c", targetAmount: new Decimal("100") }, "10"),
+      ),
+    ).get("EUR");
+
+    expect(eur?.current.toFixed(2)).toBe("710.00");
+    expect(eur?.remaining.toFixed(2)).toBe("590.00");
+    expect(eur?.sharedAccount).toBe(false);
+  });
+
+  it("never deduplicates two manual amounts: they are two separate sums set aside", () => {
+    const eur = summariseGoalTotals(
+      rows(
+        known({ id: "a", targetAmount: new Decimal("400") }, "100"),
+        known({ id: "b", targetAmount: new Decimal("800") }, "100"),
+      ),
+    ).get("EUR");
+
+    expect(eur?.current.toFixed(2)).toBe("200.00");
+    expect(eur?.sharedAccount).toBe(false);
+  });
 });

@@ -102,7 +102,8 @@ function ProgressCell({ goal, progress }: { goal: GoalRecord; progress: GoalProg
 /**
  * Footer cell of the « Progression » column: the group's weighted accomplishment,
  * `Σcurrent ÷ Σtarget`, or "—" when one goal's progress is unknown (see
- * `summariseGoalTotals`).
+ * `summariseGoalTotals`). When several goals draw on the same linked account, the total
+ * says so: its balance is counted once there, while every row keeps showing it in full.
  */
 function TotalProgressCell({ totals }: { totals: GoalTotals }) {
   if (totals.percentage === null) {
@@ -125,6 +126,14 @@ function TotalProgressCell({ totals }: { totals: GoalTotals }) {
         percentage={totals.percentage}
         reached={totals.remaining.lessThanOrEqualTo(0)}
       />
+      {totals.sharedAccount ? (
+        <span
+          className="text-xs text-zinc-500 dark:text-zinc-400"
+          title="Plusieurs objectifs partagent un même compte lié : son solde n'est compté qu'une fois dans le total, alors que chaque montant cible reste compté."
+        >
+          Solde partagé compté une fois
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -164,7 +173,8 @@ function ContributionCell({ progress, currency }: { progress: GoalProgress; curr
  * saved". The monthly contribution is the remaining amount divided by the whole calendar
  * months left, rounded half-up on cents (documented in
  * `docs/architecture/overview.md`), and it is not defined once the deadline has passed
- * or the goal is reached.
+ * or the goal is reached. The footer keeps every target but counts a shared linked
+ * account once: the money is one pot, the projects it funds are distinct.
  */
 export async function GoalsSection({
   workspaceId,
@@ -229,12 +239,27 @@ export async function GoalsSection({
 
   // Footer of the goals table: every non-text column is aggregated per currency, the
   // percentage being the group's weighted accomplishment (see `summariseGoalTotals`).
-  const totalsByCurrency = summariseGoalTotals(rows);
+  // Every goal adds its own target, but a linked account shared by several goals adds its
+  // balance once: money set aside is counted once, the projects it funds stay separate.
+  const totalRows = rows;
+
+  const goalCountByCurrency = new Map<string, number>();
+  for (const { goal } of rows) {
+    goalCountByCurrency.set(goal.currency, (goalCountByCurrency.get(goal.currency) ?? 0) + 1);
+  }
+
+  const totalsByCurrency = new Map<string, GoalTotals>();
+  for (const [currency, totals] of summariseGoalTotals(totalRows)) {
+    totalsByCurrency.set(currency, {
+      ...totals,
+      goalCount: goalCountByCurrency.get(totals.currency) ?? totals.goalCount,
+    });
+  }
 
   return (
     <Card
       title="Objectifs"
-      description="Un objectif est un montant cible dans une devise, à atteindre avant une échéance. Sa progression vient du solde enregistré d'un compte lié, ou d'un montant de départ complété par les contributions journalisées (des écritures de suivi, jamais des opérations de compte). Sans source, ou sans opération sur le compte lié, la progression est affichée comme inconnue, pas comme zéro. La contribution mensuelle est le reste divisé par les mois entiers restants, arrondie au centime (au demi supérieur) ; elle n'est plus définie après l'échéance ni une fois l'objectif atteint. Aucune conversion entre devises."
+      description="Un objectif est un montant cible dans une devise, à atteindre avant une échéance. Sa progression vient du solde enregistré d'un compte lié, ou d'un montant de départ complété par les contributions journalisées (des écritures de suivi, jamais des opérations de compte). Sans source, ou sans opération sur le compte lié, la progression est affichée comme inconnue, pas comme zéro. Le total additionne les montants cibles, mais ne compte qu'une fois le solde d'un compte partagé par plusieurs objectifs ; chaque ligne, elle, montre le solde du compte qui la couvre. La contribution mensuelle est le reste divisé par les mois entiers restants, arrondie au centime (au demi supérieur) ; elle n'est plus définie après l'échéance ni une fois l'objectif atteint. Aucune conversion entre devises."
       actions={
         <Link
           href="/api/export/goals"

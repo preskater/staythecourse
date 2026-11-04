@@ -84,11 +84,15 @@ case "$DATABASE_URL" in
 esac
 ```
 
-Prepare the data and build:
+Prepare the data and build. The seed runs twice on purpose: the second run must add
+nothing, which `db:seed:check` then verifies — one owner resolving to its personal
+workspace with the selected modules, no duplicated row:
 
 ```sh
 npm run db:deploy
 npm run db:seed
+npm run db:seed
+npm run db:seed:check
 npm run build
 ```
 

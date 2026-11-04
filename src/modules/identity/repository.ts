@@ -1,5 +1,5 @@
 import { getPrisma } from "@/lib/db";
-import { activeModules, DEFAULT_MODULES } from "@/modules/catalog/catalog";
+import { activeModules, DEFAULT_MODULES, type ModuleKey } from "@/modules/catalog/catalog";
 import { type ActiveWorkspace, defaultWorkspaceId } from "@/modules/identity/workspace";
 
 /**
@@ -120,29 +120,57 @@ export async function listMemberships(userId: string): Promise<ActiveWorkspace[]
   }));
 }
 
-/**
- * Gives the owner their personal workspace with the default modules. Used by the seed
- * script; idempotent and writes the same rows as the migration backfills, so neither
- * path duplicates the other. A module the owner disabled since stays disabled.
- */
-export async function ensureDefaultWorkspace(userId: string): Promise<void> {
-  const workspaceId = defaultWorkspaceId(userId);
-  const prisma = getPrisma();
+export type DefaultWorkspaceOptions = {
+  /** Name used when this run creates the workspace. An existing name is never rewritten. */
+  name?: string;
+  /** Modules inserted when this run creates the rows. Defaults to `DEFAULT_MODULES`. */
+  modules?: readonly ModuleKey[];
+};
 
-  await prisma.$transaction([
-    prisma.workspace.upsert({
+export type DefaultWorkspaceResult = {
+  workspaceId: string;
+  /** Rows this run inserted; 0 when the workspace already had them, active or not. */
+  addedModules: number;
+};
+
+/**
+ * Gives the owner their personal workspace, the membership that makes it reachable and
+ * the modules it starts with. Used by the seed script.
+ *
+ * Idempotent by construction: the workspace and the membership are upserted on the same
+ * identifiers the migration backfills wrote, and the modules are inserted only when
+ * missing. Neither path duplicates the other, and a module the owner disabled since
+ * stays disabled, whatever the environment asks for on the next `up`. An existing
+ * workspace keeps its own name for the same reason.
+ */
+export async function ensureDefaultWorkspace(
+  userId: string,
+  options: DefaultWorkspaceOptions = {},
+): Promise<DefaultWorkspaceResult> {
+  const workspaceId = defaultWorkspaceId(userId);
+  const name = options.name?.trim() || "Personnel";
+  const modules = options.modules ?? DEFAULT_MODULES;
+
+  return getPrisma().$transaction(async (tx) => {
+    await tx.workspace.upsert({
       where: { id: workspaceId },
-      create: { id: workspaceId, name: "Personnel", kind: "PERSONAL" },
+      create: { id: workspaceId, name, kind: "PERSONAL" },
       update: {},
-    }),
-    prisma.workspaceMember.upsert({
+    });
+    await tx.workspaceMember.upsert({
       where: { workspaceId_userId: { workspaceId, userId } },
       create: { id: `wm-${userId}`, workspaceId, userId, role: "OWNER" },
       update: {},
-    }),
-    prisma.workspaceModule.createMany({
-      data: DEFAULT_MODULES.map((moduleKey) => ({ workspaceId, moduleKey })),
-      skipDuplicates: true,
-    }),
-  ]);
+    });
+
+    const added =
+      modules.length === 0
+        ? { count: 0 }
+        : await tx.workspaceModule.createMany({
+            data: modules.map((moduleKey) => ({ workspaceId, moduleKey })),
+            skipDuplicates: true,
+          });
+
+    return { workspaceId, addedModules: added.count };
+  });
 }

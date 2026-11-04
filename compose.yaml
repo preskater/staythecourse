@@ -105,6 +105,8 @@ services:
   # from the Compte page is kept, unless SEED_OWNER_FORCE_PASSWORD=true, which is
   # also the way back from a forgotten password. There is no public sign-up, so the
   # app waits for this service: without an account there is nothing to log in with.
+  # The same run creates the owner's personal workspace, the membership that reaches
+  # it and its starting modules, so a fresh stack opens on a usable dashboard.
   # The seed also needs AUTH_SECRET and INTEGRATION_ENCRYPTION_KEY because it
   # imports @/lib/db, which validates the whole server environment.
   seed:
@@ -123,6 +125,14 @@ services:
       SEED_OWNER_EMAIL: ${SEED_OWNER_EMAIL:?SEED_OWNER_EMAIL is required}
       SEED_OWNER_PASSWORD: ${SEED_OWNER_PASSWORD:?SEED_OWNER_PASSWORD is required}
       SEED_OWNER_NAME: ${SEED_OWNER_NAME:-Proprietaire}
+      # The owner's personal workspace and the modules it starts with (M7-06). Applied
+      # only when the workspace is created: an existing stack keeps its name, its
+      # modules, and any module disabled from the « Modules » page. A module key the
+      # catalog does not know fails the seed rather than being dropped silently.
+      # An empty SEED_WORKSPACE_MODULES is honoured (dashboard with no module page),
+      # which is why the default below uses `-` and not `:-`.
+      SEED_WORKSPACE_NAME: ${SEED_WORKSPACE_NAME:-Personnel}
+      SEED_WORKSPACE_MODULES: ${SEED_WORKSPACE_MODULES-budget,real-estate,development}
       # Set to true to overwrite an existing password with SEED_OWNER_PASSWORD again,
       # which is the way back from a forgotten password. Left false, the seed only
       # writes the password when it creates the account, so a password changed from

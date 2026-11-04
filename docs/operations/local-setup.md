@@ -64,6 +64,11 @@ npm run db:seed
 - `db:seed` creates the owner from `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD` and
   `SEED_OWNER_NAME`, or refreshes the name of the account that exists. The stored
   password is kept once the account exists, unless `SEED_OWNER_FORCE_PASSWORD=true`.
+- The same run creates the owner's personal workspace (`SEED_WORKSPACE_NAME`, default
+  `Personnel`), the membership that makes it reachable and the modules it starts with
+  (`SEED_WORKSPACE_MODULES`, default `budget,real-estate,development`). Running it
+  again duplicates nothing and never re-enables a module disabled from the **Modules**
+  page; `npm run db:seed:check` verifies the result on a throwaway database.
 - Server configuration is validated lazily by `src/lib/env.ts`: a missing or malformed
   secret fails on first use with the variable names, not with an obscure error later.
 

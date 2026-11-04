@@ -71,6 +71,44 @@ export function isModuleKey(value: unknown): value is ModuleKey {
   return moduleKeySchema.safeParse(value).success;
 }
 
+export type ModuleSelection =
+  | { status: "ok"; modules: ModuleKey[] }
+  | { status: "unknown_module"; keys: string[] }
+  | { status: "missing_prerequisites"; missing: ModuleKey[] };
+
+/**
+ * Reads a comma- or space-separated list of module keys, as `SEED_WORKSPACE_MODULES`
+ * does, into catalog-ordered keys.
+ *
+ * Unknown keys are reported together instead of being guessed at, and a prerequisite
+ * left out of the same list is refused: storing only `profitability` would look
+ * configured while `activeModules` switches it straight back off. An empty list is
+ * accepted: a workspace may enable nothing at all.
+ */
+export function parseModuleSelection(raw: string): ModuleSelection {
+  const requested = new Set(
+    raw
+      .split(/[\s,]+/)
+      .map((key) => key.trim().toLowerCase())
+      .filter((key) => key.length > 0),
+  );
+
+  const unknown = [...requested].filter((key) => !isModuleKey(key));
+  if (unknown.length > 0) {
+    return { status: "unknown_module", keys: unknown };
+  }
+
+  const modules = MODULE_KEYS.filter((key) => requested.has(key));
+  const missing = new Set(
+    modules.flatMap((key) => MODULE_CATALOG[key].requires.filter((required) => !requested.has(required))),
+  );
+  if (missing.size > 0) {
+    return { status: "missing_prerequisites", missing: [...missing] };
+  }
+
+  return { status: "ok", modules };
+}
+
 /**
  * The modules a workspace can actually use, in catalog order: enabled, known, and with
  * every prerequisite active in turn. Disabling `budget` therefore switches

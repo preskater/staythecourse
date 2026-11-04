@@ -6,6 +6,7 @@ import {
   MODULE_CATALOG,
   MODULE_KEYS,
   moduleNavLinks,
+  parseModuleSelection,
   validateModuleChange,
   type ModuleKey,
 } from "./catalog";
@@ -34,6 +35,54 @@ describe("module catalog", () => {
 
   it("defaults to the modules that predate the catalog", () => {
     expect(DEFAULT_MODULES).toEqual(["budget", "real-estate", "development"]);
+  });
+});
+
+describe("parseModuleSelection", () => {
+  it("reads a comma-separated list into catalog order", () => {
+    expect(parseModuleSelection("development, budget")).toEqual({
+      status: "ok",
+      modules: ["budget", "development"],
+    });
+  });
+
+  it("accepts spaces, duplicates and another case", () => {
+    expect(parseModuleSelection("Budget  budget\nREAL-ESTATE")).toEqual({
+      status: "ok",
+      modules: ["budget", "real-estate"],
+    });
+  });
+
+  it("accepts an empty list: a workspace may enable nothing", () => {
+    expect(parseModuleSelection("   ")).toEqual({ status: "ok", modules: [] });
+  });
+
+  it("reads the documented default value back as the default set", () => {
+    expect(parseModuleSelection(DEFAULT_MODULES.join(","))).toEqual({
+      status: "ok",
+      modules: [...DEFAULT_MODULES],
+    });
+  });
+
+  it("reports every unknown key together, instead of dropping them", () => {
+    expect(parseModuleSelection("budget, billing, __proto__")).toEqual({
+      status: "unknown_module",
+      keys: ["billing", "__proto__"],
+    });
+  });
+
+  it("refuses a selection that leaves a prerequisite out", () => {
+    expect(parseModuleSelection("profitability")).toEqual({
+      status: "missing_prerequisites",
+      missing: ["budget", "real-estate"],
+    });
+  });
+
+  it("accepts a module once its prerequisites are part of the same list", () => {
+    expect(parseModuleSelection("profitability,budget,real-estate")).toEqual({
+      status: "ok",
+      modules: ["budget", "real-estate", "profitability"],
+    });
   });
 });
 

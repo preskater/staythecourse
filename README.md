@@ -190,7 +190,7 @@ cp .env.example .env
 # 3. Start PostgreSQL and prepare the database
 docker compose up -d --wait db
 npm run db:migrate
-npm run db:seed          # creates the owner from SEED_OWNER_* variables
+npm run db:seed          # creates the owner and its workspace from SEED_* variables
 
 # 4. Run
 npm run dev              # http://localhost:3000
@@ -212,6 +212,17 @@ the owner account from `SEED_OWNER_*`, or refreshes the name of the one that exi
 Both exit; `app` starts only once they succeeded, so a failed migration or a missing
 account never boots a server. Inspect them with
 `docker compose --profile full logs migrate seed`.
+
+The same run gives that owner a usable workspace: the personal space with its `OWNER`
+membership and the modules listed in `SEED_WORKSPACE_MODULES` (by default the three
+that have a page: budget, real estate, development). A fresh stack therefore opens on a
+populated navigation instead of an empty dashboard, with no manual SQL. Both the
+workspace name and the module set only apply when the workspace is created: an existing
+stack keeps its name, and a module disabled from the **Modules** page is never switched
+back on by a restart. A module key the catalog does not know, or a module whose
+prerequisites are missing from the same list, fails the seed instead of being silently
+dropped. `npm run db:seed:check` re-reads the result and fails when the account resolves
+to no workspace or when a second run duplicated one.
 
 The seed is idempotent and runs on every `up`. It writes `SEED_OWNER_PASSWORD` when
 it creates the account, then leaves the stored hash alone: a password changed from
@@ -357,6 +368,7 @@ the fictitious values. The ones that matter most:
 | `AUTH_TRUST_HOST` | Auth.js host trust; the compose stack sets `true`. |
 | `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`, `SEED_OWNER_NAME` | Create the single owner account. There is no public sign-up. |
 | `SEED_OWNER_FORCE_PASSWORD` | `true` overwrites the stored hash with `SEED_OWNER_PASSWORD`; left unset, a password changed from the Compte page is kept. |
+| `SEED_WORKSPACE_NAME`, `SEED_WORKSPACE_MODULES` | Name and starting modules of the owner's personal workspace, applied when the seed creates it. Values an existing workspace already has are never rewritten. |
 | `NEXT_PUBLIC_DEFAULT_CURRENCY`, `NEXT_PUBLIC_DEFAULT_TIME_ZONE` | Interface defaults (`EUR`, `Europe/Paris`); the only variables shipped to the browser. |
 | `APP_BIND_HOST`, `APP_PORT` | Host interface and port published by the Compose application (`0.0.0.0:3000` by default). Use `APP_BIND_HOST=127.0.0.1` for local-only access. |
 | `APP_HOST`, `PROXY_PORT` | Address and host port served by the proxy when that proxy is enabled. |
@@ -380,7 +392,8 @@ secret must never be added to that block.
 | `npm run db:generate` | Generate the Prisma client into `src/generated/prisma` (required before typecheck, tests or build) |
 | `npm run db:migrate` | Create and apply a migration (development) |
 | `npm run db:deploy` | Apply pending migrations (deployment) |
-| `npm run db:seed` | Create the owner account, or refresh its name (the stored password is kept) |
+| `npm run db:seed` | Create the owner account and its workspace, or refresh the name of the account that exists (the stored password is kept) |
+| `npm run db:seed:check` | Read-only check that the seed left a reachable workspace, without duplicates; meant for a throwaway stack |
 | `npm run db:cleanup` | Delete synchronisation runs older than the retention window (keeps the latest success per connection) |
 | `npm run db:studio` | Browse the database |
 
@@ -483,7 +496,9 @@ repository's own scripts and fictitious values only.
   internals are in `infra/backups/README.md`.
 - Apply migrations and create the owner before the application starts: the
   `migrate` and `seed` services do both, or run them alone with
-  `docker compose --profile full run --rm migrate` / `run --rm seed`.
+  `docker compose --profile full run --rm migrate` / `run --rm seed`. The seed also
+  creates the owner's workspace, its membership and the modules selected by
+  `SEED_WORKSPACE_MODULES`, so a fresh deployment needs no manual SQL.
 - `SEED_OWNER_PASSWORD` is written when the seed creates the account, or when
   `SEED_OWNER_FORCE_PASSWORD=true`: a password changed from the Compte page survives
   a restart or a redeploy. Keep the value out of the image; rotate it by editing

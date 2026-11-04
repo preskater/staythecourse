@@ -191,17 +191,30 @@ export function computeGoalProgress(
  * per-goal percentages: averaging would let a 5 € goal weigh as much as a 5 000 € one. It
  * follows the per-goal rule (non-positive current reads 0 %, one decimal, half-up).
  *
+ * **Shared accounts are counted once.** Several goals may point at the same linked
+ * account; that account is one pot of money, so its balance enters `current` (and thus
+ * `remaining`) a single time, while every target is still added: the group's target is the
+ * sum of what the goals ask for, its current amount is the money actually set aside. The
+ * targets are never deduplicated — two goals on one account are two distinct projects to
+ * fund.
+ *
  * Unknowns are not zeros: as soon as one goal of the group has an unknown progress, the
  * amounts are still summed for the known rows but `complete` turns false and the
  * percentage is `null`, so the caller shows "—" instead of a rounder-looking figure.
  * Likewise `monthlyContribution` is `null` when one goal's contribution is undefined (its
- * deadline has passed) — a reached goal counts as 0, since it asks for nothing.
+ * deadline has passed) — a reached goal counts as 0, since it asks for nothing. That
+ * column stays the **sum of the rows' own figures**, each answering "what does this goal
+ * ask for per month from its own source"; it is a plan per goal, not money to add to the
+ * linked account once per goal.
  */
 export type GoalTotals = {
   currency: Currency;
   goalCount: number;
+  /** Σ of the rows' target amounts — never deduplicated. */
   target: Decimal;
+  /** Σ of the distinct sources: a linked account shared by several goals counts once. */
   current: Decimal;
+  /** Σtarget − Σcurrent (shared accounts included once); negative when exceeded. */
   remaining: Decimal;
   /** Σcurrent ÷ Σtarget × 100, one decimal; `null` when a progress is unknown. */
   percentage: Decimal | null;
@@ -211,12 +224,17 @@ export type GoalTotals = {
   nextDeadline: Date;
   /** False when at least one goal of the group has an unknown progress. */
   complete: boolean;
+  /** True when at least two goals of the group draw on the same linked account. */
+  sharedAccount: boolean;
 };
 
 export function summariseGoalTotals(
   rows: readonly { goal: GoalRecord; progress: GoalProgress }[],
 ): Map<Currency, GoalTotals> {
   const totals = new Map<Currency, GoalTotals>();
+  // Per currency, the linked accounts whose balance has already entered `current`: the
+  // same account may back several goals, and its money must not be counted twice.
+  const countedAccounts = new Map<Currency, Set<string>>();
 
   for (const { goal, progress } of rows) {
     const total = totals.get(goal.currency) ?? {
@@ -229,6 +247,7 @@ export function summariseGoalTotals(
       monthlyContribution: new Decimal(0),
       nextDeadline: goal.targetDate,
       complete: true,
+      sharedAccount: false,
     };
 
     total.goalCount += 1;
@@ -240,8 +259,22 @@ export function summariseGoalTotals(
     if (progress.kind === "UNKNOWN") {
       total.complete = false;
     } else {
-      total.current = total.current.plus(progress.current);
-      total.remaining = total.remaining.plus(progress.remaining);
+      const counted = countedAccounts.get(goal.currency) ?? new Set<string>();
+      countedAccounts.set(goal.currency, counted);
+      const sharedWithCountedGoal = goal.accountId !== null && counted.has(goal.accountId);
+      if (goal.accountId !== null) {
+        counted.add(goal.accountId);
+      }
+
+      if (sharedWithCountedGoal) {
+        // The row still shows the account's balance as its own backing; the group only
+        // adds that money once, so the whole target of the duplicating goal stays to fund.
+        total.sharedAccount = true;
+        total.remaining = total.remaining.plus(goal.targetAmount);
+      } else {
+        total.current = total.current.plus(progress.current);
+        total.remaining = total.remaining.plus(progress.remaining);
+      }
 
       if (progress.monthlyContribution === null) {
         // Nothing left to plan for a reached goal; an undefined figure (deadline passed)
