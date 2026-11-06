@@ -19,20 +19,28 @@ import {
   propertyValuationInputSchema,
   propertyUpdateSchema,
 } from "@/modules/real-estate/domain";
+import {
+  propertyEventInputSchema,
+  propertyEventUpdateSchema,
+} from "@/modules/real-estate/events";
 import { loanInputSchema, loanUpdateSchema } from "@/modules/real-estate/loans";
 import {
   createCashflow,
   createLoan,
   createProperty,
+  createPropertyEvent,
   createPropertyValuation,
   deleteLoan,
   deleteProperty,
+  deletePropertyEvent,
   findLoan,
   findProperty,
+  findPropertyEvent,
   getPropertyDetail,
   savePropertySale,
   updateLoan,
   updateProperty,
+  updatePropertyEvent,
 } from "@/modules/real-estate/repository";
 import { computeSaleProceeds } from "@/modules/real-estate/valuation";
 import { findTransactionRef } from "@/modules/budget/repository";
@@ -415,4 +423,106 @@ export async function deleteLoanAction(values: unknown): Promise<ActionResult> {
 
   revalidatePath("/real-estate");
   return { status: "ok" };
+}
+
+/**
+ * Write Server Actions for property events (RE-04).
+ *
+ * An event is a reminder, never a payment: creating or editing one writes only the
+ * event row and **never** a transaction or a cashflow. Authorisation comes first and
+ * every identifier is looked up for the signed-in owner, like the other real-estate
+ * actions.
+ */
+
+export async function createPropertyEventAction(values: unknown): Promise<ActionResult> {
+  const user = await requireModule("real-estate");
+
+  const parsed = propertyEventInputSchema.safeParse(values);
+  if (!parsed.success) {
+    return invalidResult(parsed.error);
+  }
+
+  const input = parsed.data;
+
+  const property = await findProperty(user.workspace.id, input.propertyId);
+  if (!property) {
+    return rejectedResult("propertyId", "Bien introuvable.");
+  }
+
+  try {
+    const created = await createPropertyEvent(user.workspace.id, input);
+    if (!created) {
+      return rejectedResult("propertyId", "Bien introuvable.");
+    }
+  } catch (error) {
+    return unexpectedResult("createPropertyEvent", error);
+  }
+
+  revalidateProperty(input.propertyId);
+  // Said explicitly: an obligation is a reminder, not a payment.
+  return { status: "ok", message: "Échéance enregistrée. Aucune transaction n'a été créée." };
+}
+
+export async function updatePropertyEventAction(values: unknown): Promise<ActionResult> {
+  const user = await requireModule("real-estate");
+
+  const parsed = propertyEventUpdateSchema.safeParse(values);
+  if (!parsed.success) {
+    return invalidResult(parsed.error);
+  }
+
+  const input = parsed.data;
+
+  const existing = await findPropertyEvent(user.workspace.id, input.id);
+  if (!existing) {
+    return rejectedResult("id", "Échéance introuvable : elle a peut-être déjà été supprimée.");
+  }
+
+  const property = await findProperty(user.workspace.id, input.propertyId);
+  if (!property) {
+    return rejectedResult("propertyId", "Bien introuvable.");
+  }
+
+  try {
+    const { id, ...fields } = input;
+    const updated = await updatePropertyEvent(user.workspace.id, id, fields);
+    if (!updated) {
+      return rejectedResult("id", "Échéance introuvable : elle a peut-être déjà été supprimée.");
+    }
+  } catch (error) {
+    return unexpectedResult("updatePropertyEvent", error);
+  }
+
+  revalidateProperty(input.propertyId);
+  if (existing.propertyId !== input.propertyId) {
+    revalidateProperty(existing.propertyId);
+  }
+
+  return { status: "ok", message: "Échéance mise à jour." };
+}
+
+export async function deletePropertyEventAction(values: unknown): Promise<ActionResult> {
+  const user = await requireModule("real-estate");
+
+  const parsed = recordIdInput.safeParse(values);
+  if (!parsed.success) {
+    return invalidResult(parsed.error);
+  }
+
+  const existing = await findPropertyEvent(user.workspace.id, parsed.data.id);
+  if (!existing) {
+    return rejectedResult("id", "Échéance introuvable : elle a peut-être déjà été supprimée.");
+  }
+
+  try {
+    const deleted = await deletePropertyEvent(user.workspace.id, parsed.data.id);
+    if (!deleted) {
+      return rejectedResult("id", "Échéance introuvable : elle a peut-être déjà été supprimée.");
+    }
+  } catch (error) {
+    return unexpectedResult("deletePropertyEvent", error);
+  }
+
+  revalidateProperty(existing.propertyId);
+  return { status: "ok", message: "Échéance supprimée. Aucune écriture financière n'a été touchée." };
 }

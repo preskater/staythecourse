@@ -75,7 +75,9 @@ export type ClientModules = {
   "src/app/(app)/integrations/issue-filters-form.tsx": typeof import("@/app/(app)/integrations/issue-filters-form");
   "src/app/(app)/modules/module-toggle.tsx": typeof import("@/app/(app)/modules/module-toggle");
   "src/app/(app)/real-estate/cashflow-form.tsx": typeof import("@/app/(app)/real-estate/cashflow-form");
+  "src/app/(app)/real-estate/delete-event-button.tsx": typeof import("@/app/(app)/real-estate/delete-event-button");
   "src/app/(app)/real-estate/delete-loan-button.tsx": typeof import("@/app/(app)/real-estate/delete-loan-button");
+  "src/app/(app)/real-estate/event-form.tsx": typeof import("@/app/(app)/real-estate/event-form");
   "src/app/(app)/real-estate/loan-form.tsx": typeof import("@/app/(app)/real-estate/loan-form");
   "src/app/(app)/real-estate/property-form.tsx": typeof import("@/app/(app)/real-estate/property-form");
   "src/app/(app)/real-estate/remove-property-button.tsx": typeof import("@/app/(app)/real-estate/remove-property-button");

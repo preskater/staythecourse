@@ -16,7 +16,7 @@ the pages that consume it.
 | `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) and their permission presets. No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts`, `permissions.ts` |
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
-| `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing and property indicators. | `domain.ts`, `kpis.ts`, `repository.ts` |
+| `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
 | `ai-costs` | Exact cost amounts, each with a mandatory actuality and an immutable source reference. Primitives only: no persistence, provider call or allocation yet (M9-01). | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts` |
 | `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots. | `domain.ts`, `adapter.ts`, `github.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
@@ -297,6 +297,20 @@ asked for: a cascade here would silently change what a property is worth.
   totals would double-count it. A missing figure — a balance, a rate, a term — reads
   « inconnu », never zero. Currencies are never converted: financing is totalled per
   currency.
+- **Property events** (RE-04) describe obligations that are not financial entries yet:
+  a tax, an insurance premium, maintenance, a lease renewal, an inspection, a loan
+  deadline or renovation work. An event carries a kind, a label, an optional calendar
+  day (`dueDate`), a status (`PLANNED`, `DONE`, `CANCELLED`), notes and an optional
+  **informational** amount with its currency. It is owner-scoped through its property.
+- **Due-state model** — the state is derived from the status and the date, never
+  stored. `DONE` and `CANCELLED` always win; a planned event with no date is `NO_DATE`
+  (never overdue); otherwise a date before today is `OVERDUE`, today is `DUE_TODAY` and
+  a later date is `UPCOMING`. Calendar days are compared in UTC, so a time of day cannot
+  move an event into another state, and an absent date is never fabricated.
+- **The event amount never feeds a total.** It is labelled « indicatif » in the
+  interface: `computePropertyTotals`, the KPI figures and the budget stay cashflow-only.
+  Creating or editing an event writes only the event row and never a transaction, so an
+  obligation cannot become a duplicate payment.
 
 ## Documented indicator definitions
 

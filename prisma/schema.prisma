@@ -49,6 +49,24 @@ enum CashflowKind {
   EXPENSE
 }
 
+/// Recurring obligations of a property that are not financial transactions yet.
+enum PropertyEventKind {
+  TAX
+  INSURANCE
+  MAINTENANCE
+  LEASE
+  INSPECTION
+  LOAN
+  RENOVATION
+  OTHER
+}
+
+enum PropertyEventStatus {
+  PLANNED
+  DONE
+  CANCELLED
+}
+
 enum IntegrationProvider {
   GITHUB
   GITLAB
@@ -608,6 +626,7 @@ model Property {
   cashflows PropertyCashflow[]
   loans     PropertyLoan[]
   valuations PropertyValuation[]
+  events    PropertyEvent[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -696,6 +715,38 @@ model PropertyCashflow {
   transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
   @@index([propertyId, dueDate])
+}
+
+/// A dated obligation of a property: a tax, an insurance premium, a lease renewal,
+/// an inspection, a loan deadline or renovation work.
+///
+/// An event is a reminder, not a financial entry: its optional `amount` is
+/// **informational only** and never enters the property totals or the budget. Only a
+/// transaction (or a cashflow entry) moves money, so creating an event can never create
+/// a duplicate payment.
+///
+/// `dueDate` is a calendar day. An event without a date is never overdue: it stays
+/// explicitly undated rather than borrowing a date it does not have.
+model PropertyEvent {
+  id         String              @id @default(cuid())
+  propertyId String
+  kind       PropertyEventKind
+  label      String
+  /// Calendar day the obligation is due; null = no date recorded yet.
+  dueDate    DateTime?           @db.Date
+  status     PropertyEventStatus @default(PLANNED)
+  /// Indicative amount, positive; null = not recorded. Never part of a financial total.
+  amount     Decimal?            @db.Decimal(18, 2)
+  /// Currency of `amount`; null when no amount is recorded.
+  currency   String?             @db.Char(3)
+  notes      String?
+  createdAt  DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime            @updatedAt @db.Timestamptz(3)
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, dueDate])
+  @@index([propertyId, status])
 }
 
 /// Read-only connection to a GitHub or GitLab instance.

@@ -134,6 +134,14 @@ Working today:
   computed says why (no acquisition price, incomplete year, another currency, missing
   loan payment) instead of showing a zero, and a window without any cashflow prints no
   figures at all.
+- Property events (real-estate, « Échéances et obligations »): taxes, insurance,
+  maintenance, leases, inspections, loan deadlines and renovation tracked as dated
+  reminders — kind, optional calendar date, status (planned, done, cancelled), notes and
+  an optional **informational** amount. The due state is derived (upcoming, due today,
+  overdue, done, cancelled, no date): an undated event is never overdue and no date is
+  ever invented. The list filters by property and status, and create/edit/delete run
+  through owner-scoped Server Actions. Saving an event never creates a transaction, and
+  its amount is labelled « indicatif »: it never enters the property totals.
 - GitHub / GitLab connections: read-only adapters, encrypted tokens, manual
   synchronisation, project snapshots, and a small GitHub: open issues and pull
   requests counted per repository, an explorer with combinable filters (repository,
