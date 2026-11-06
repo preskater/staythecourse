@@ -4,6 +4,7 @@ import { passwordTag } from "@/lib/auth/password";
 import { hasModule, type ModuleKey } from "@/modules/catalog/catalog";
 import { findActiveSession, touchSession } from "@/modules/identity/sessions";
 import { findOwnerById, listMemberships } from "@/modules/identity/repository";
+import { hasPermission, type Permission } from "@/modules/identity/permissions";
 import { type ActiveWorkspace, resolveActiveWorkspace } from "@/modules/identity/workspace";
 
 /**
@@ -79,7 +80,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   // ponytail: always the oldest membership; the switcher (second membership) will pass
   // the chosen identifier here.
   const workspace = resolveActiveWorkspace(memberships);
-  if (!workspace) {
+  if (!workspace || !hasPermission(workspace.role, "read")) {
     return null;
   }
 
@@ -101,14 +102,34 @@ export async function requireUser(): Promise<SessionUser> {
 }
 
 /**
- * For a module's Server Actions: the session check of `requireUser`, then the module
- * must be active in the session's workspace. Otherwise the answer is a 404 and the
- * action writes nothing. Pages check `hasModule` themselves and render `ModuleDisabled`,
- * so a direct link explains the state. The key is a literal at the call site, never a
- * value from the browser.
+ * For a Server Action or page that is not tied to a module: the session check of
+ * `requireUser`, then the active workspace's role must grant `permission`. A refusal is
+ * a 404, never a 403 that would confirm the resource exists, and the caller writes
+ * nothing. The permission is a literal at the call site, never a value from the browser.
  */
-export async function requireModule(key: ModuleKey): Promise<SessionUser> {
+export async function requirePermission(permission: Permission): Promise<SessionUser> {
   const user = await requireUser();
+
+  if (!hasPermission(user.workspace.role, permission)) {
+    notFound();
+  }
+
+  return user;
+}
+
+/**
+ * For a module's Server Actions: the session and permission checks above, then the
+ * module must be active in the session's workspace. Otherwise the answer is a 404 and
+ * the action writes nothing. The permission is always explicit — there is no default —
+ * so a new action cannot inherit a read check by omission. Pages check `hasModule`
+ * themselves and render `ModuleDisabled`, so a direct link explains the state. The key
+ * is a literal at the call site, never a value from the browser.
+ */
+export async function requireModule(
+  key: ModuleKey,
+  permission: Permission,
+): Promise<SessionUser> {
+  const user = await requirePermission(permission);
 
   if (!hasModule(user.workspace, key)) {
     notFound();
@@ -125,6 +146,35 @@ export async function requireApiUser(): Promise<SessionUser | null> {
   return getSessionUser();
 }
 
+/**
+ * For Route Handlers: one gate for session, active module and role permission.
+ *
+ * Returns the session user, or the exact response to send: 401 when signed out, 404
+ * when the module is disabled (its existence is not disclosed), 403 when the role
+ * denies the permission. The caller checks `instanceof Response` and returns it as is.
+ * The order keeps an anonymous request from learning whether a module is enabled.
+ */
+export async function requireApiAccess(
+  permission: Permission,
+  moduleKey?: ModuleKey,
+): Promise<SessionUser | Response> {
+  const user = await requireApiUser();
+
+  if (!user) {
+    return unauthorizedResponse();
+  }
+
+  if (moduleKey && !hasModule(user.workspace, moduleKey)) {
+    return moduleUnavailableResponse();
+  }
+
+  if (!hasPermission(user.workspace.role, permission)) {
+    return forbiddenResponse();
+  }
+
+  return user;
+}
+
 /** Shared 404 body for a module that is not active in the session's workspace. */
 export function moduleUnavailableResponse(): Response {
   return Response.json(
@@ -138,5 +188,16 @@ export function unauthorizedResponse(): Response {
   return Response.json(
     { error: "authentication_required" },
     { status: 401, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+/**
+ * Shared 403 body: the session is valid, the workspace is active, but the role does
+ * not grant the requested permission. It names no record and carries no data.
+ */
+export function forbiddenResponse(): Response {
+  return Response.json(
+    { error: "forbidden" },
+    { status: 403, headers: { "Cache-Control": "no-store" } },
   );
 }

@@ -47,8 +47,3 @@ export function resolveActiveWorkspace(
 
   return memberships[0] ?? null;
 }
-
-/** Enabling or disabling a workspace's modules is reserved to its owner and admins. */
-export function canManageModules(role: WorkspaceRole): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}

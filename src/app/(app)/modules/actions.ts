@@ -6,7 +6,7 @@ import { invalidResult, rejectedResult, unexpectedResult, type ActionResult } fr
 import { requireUser } from "@/lib/auth/guard";
 import { MODULE_CATALOG } from "@/modules/catalog/catalog";
 import { applyModuleChange } from "@/modules/catalog/repository";
-import { canManageModules } from "@/modules/identity/workspace";
+import { hasPermission } from "@/modules/identity/permissions";
 
 const moduleToggleInput = z.object({ key: z.string(), enabled: z.boolean() });
 
@@ -20,7 +20,7 @@ const moduleToggleInput = z.object({ key: z.string(), enabled: z.boolean() });
 export async function setModuleEnabledAction(values: unknown): Promise<ActionResult> {
   const user = await requireUser();
 
-  if (!canManageModules(user.workspace.role)) {
+  if (!hasPermission(user.workspace.role, "manage-modules")) {
     return {
       status: "error",
       message: "Seuls le propriétaire et les administrateurs de l'espace peuvent changer ses modules.",

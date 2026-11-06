@@ -7,7 +7,7 @@ import {
   unexpectedResult,
   type ActionResult,
 } from "@/lib/actions";
-import { requireUser } from "@/lib/auth/guard";
+import { requirePermission } from "@/lib/auth/guard";
 import { recordIdInput } from "@/lib/validation";
 import {
   ALERT_KINDS,
@@ -88,7 +88,7 @@ function toRuleConfigs(input: AlertRulesInput): AlertRuleConfig[] {
  * the condition holds. A stamp is recorded, never the ledger.
  */
 export async function dismissAlertAction(values: unknown): Promise<ActionResult> {
-  const user = await requireUser();
+  const user = await requirePermission("write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -120,7 +120,7 @@ export async function dismissAlertAction(values: unknown): Promise<ActionResult>
  * alerts close, and a later re-enable opens fresh ones).
  */
 export async function saveAlertRulesAction(values: unknown): Promise<ActionResult> {
-  const user = await requireUser();
+  const user = await requirePermission("write");
 
   const parsed = alertRulesInputSchema.safeParse(values);
   if (!parsed.success) {
