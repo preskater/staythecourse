@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireModule } from "@/lib/auth/guard";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { connectionInputSchema } from "@/modules/integrations/domain";
 import { upsertConnection } from "@/modules/integrations/repository";
 import { synchroniseConnection } from "@/jobs/sync";
@@ -29,7 +30,7 @@ export async function connectProviderAction(formData: FormData): Promise<void> {
     redirect("/integrations?status=invalid");
   }
 
-  await upsertConnection({
+  const connection = await upsertConnection({
     workspaceId: user.workspace.id,
     provider: parsed.data.provider,
     instanceUrl: parsed.data.instanceUrl,
@@ -37,6 +38,18 @@ export async function connectProviderAction(formData: FormData): Promise<void> {
     // Read-only permissions are declared by the adapters, never granted here.
     permissions: [],
     token: parsed.data.token,
+  });
+
+  // Covers the first connection and a later token rotation; the token itself is never
+  // passed to the trail.
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "integration.connect",
+    entityType: "INTEGRATION",
+    entityId: connection.id,
+    outcome: "SUCCESS",
+    metadata: { provider: parsed.data.provider },
   });
 
   revalidatePath("/integrations");
@@ -53,7 +66,9 @@ export async function syncConnectionAction(formData: FormData): Promise<void> {
 
   // A manual one-shot run. Scheduled synchronisations use the same function from
   // a scheduler outside the web process.
-  const result = await synchroniseConnection(user.workspace.id, connectionId);
+  const result = await synchroniseConnection(user.workspace.id, connectionId, {
+    actorId: user.id,
+  });
 
   revalidatePath("/integrations");
 

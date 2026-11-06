@@ -10,12 +10,13 @@ export type NavLink = { href: string; label: string };
  * Navigation only: no sensitive data and no authorisation decision here. The links
  * arrive already filtered by the server layout from the workspace's active modules.
  *
- * `MainNav` is the inline list, from `lg` up and on its own header row. `MobileNav` is
- * the burger built on a native `<details>`, so it opens with the keyboard and is
- * announced as expanded or collapsed without extra ARIA; `children` is what the menu
- * shows under the links on small screens (the account and sign-out controls).
+ * `MainNav` is the module row, from `lg` up; the always-present entries live in
+ * `UtilityNav` so the module row stays short. `MobileNav` is the burger built on a
+ * native `<details>`, so it opens with the keyboard and is announced as expanded or
+ * collapsed without extra ARIA; `children` is what the menu shows under the links on
+ * small screens (the utility links and the account controls).
  */
-function NavLinkItem({ link, pathname }: { link: NavLink; pathname: string | null }) {
+export function NavLinkItem({ link, pathname }: { link: NavLink; pathname: string | null }) {
   const isActive = pathname === link.href || pathname?.startsWith(`${link.href}/`) === true;
 
   return (

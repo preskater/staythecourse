@@ -15,6 +15,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:cleanup": "tsx prisma/cleanup.ts",
+    "audit:operation": "tsx prisma/audit-operation.ts",
     "db:studio": "prisma studio"
   },
   "dependencies": {

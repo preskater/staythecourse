@@ -207,6 +207,7 @@ const MODULES = {
   realEstate: () => import("@/modules/real-estate/repository"),
   microBusiness: () => import("@/modules/micro-business/repository"),
   alerts: () => import("@/modules/alerts/repository"),
+  audit: () => import("@/modules/audit/repository"),
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
   aiCosts: () => import("@/modules/ai-costs/repository"),

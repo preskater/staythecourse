@@ -4,6 +4,7 @@ import { z } from "zod";
 import { signOut } from "@/auth";
 import { rejectedResult, unexpectedResult, type ActionResult } from "@/lib/actions";
 import { requireUser } from "@/lib/auth/guard";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { revokeOtherSessions, revokeSession } from "@/modules/identity/sessions";
 
 /**
@@ -41,6 +42,16 @@ export async function revokeSessionAction(values: unknown): Promise<ActionResult
     return rejectedResult("id", NOT_FOUND_MESSAGE);
   }
 
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "auth.session_revoke",
+    entityType: "SESSION",
+    entityId: parsed.data.id,
+    outcome: "SUCCESS",
+    metadata: { scope: "ONE" },
+  });
+
   // The interface does not offer this, but a hand-made request can. Revoking the
   // session making the call signs it out immediately: the token is refused from the
   // next request on, so answering "ok" would leave the page unusable anyway.
@@ -56,6 +67,17 @@ export async function revokeOtherSessionsAction(): Promise<ActionResult> {
 
   try {
     const count = await revokeOtherSessions(user.id, user.sessionId);
+
+    if (count > 0) {
+      await recordAuditEventSafely({
+        workspaceId: user.workspace.id,
+        actorId: user.id,
+        action: "auth.session_revoke",
+        entityType: "SESSION",
+        outcome: "SUCCESS",
+        metadata: { scope: "OTHERS", count },
+      });
+    }
 
     return {
       status: "ok",

@@ -90,6 +90,7 @@ export type ClientModules = {
   "src/components/keyboard-shortcuts.tsx": typeof import("@/components/keyboard-shortcuts");
   "src/components/main-nav.tsx": typeof import("@/components/main-nav");
   "src/components/ui/chart.tsx": typeof import("@/components/ui/chart");
+  "src/components/utility-nav.tsx": typeof import("@/components/utility-nav");
 };
 
 type Offenders = {

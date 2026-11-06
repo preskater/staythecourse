@@ -3,10 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requireUserMock = vi.fn();
 const applyModuleChangeMock = vi.fn();
 const revalidatePathMock = vi.fn();
+const recordAuditEventSafelyMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({ requireUser: () => requireUserMock() }));
 vi.mock("@/modules/catalog/repository", () => ({
   applyModuleChange: (...args: unknown[]) => applyModuleChangeMock(...args),
+}));
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditEventSafelyMock(...args),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: (...args: unknown[]) => revalidatePathMock(...args) }));
 
@@ -27,6 +31,7 @@ describe("setModuleEnabledAction", () => {
     requireUserMock.mockReset().mockResolvedValue(sessionAs("OWNER"));
     applyModuleChangeMock.mockReset();
     revalidatePathMock.mockReset();
+    recordAuditEventSafelyMock.mockReset();
   });
 
   it("disables a module of the session's workspace and refreshes every page", async () => {
@@ -37,6 +42,14 @@ describe("setModuleEnabledAction", () => {
     expect(result.status).toBe("ok");
     expect(applyModuleChangeMock).toHaveBeenCalledWith("ws-user-1", { key: "budget", enabled: false });
     expect(revalidatePathMock).toHaveBeenCalledWith("/", "layout");
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-user-1",
+        action: "module.disable",
+        entityType: "MODULE",
+        entityId: "budget",
+      }),
+    );
   });
 
   it.each(["MEMBER", "VIEWER"])("refuses a %s without writing", async (role) => {
@@ -46,6 +59,8 @@ describe("setModuleEnabledAction", () => {
 
     expect(result.status).toBe("error");
     expect(applyModuleChangeMock).not.toHaveBeenCalled();
+    // A failed authorisation writes nothing.
+    expect(recordAuditEventSafelyMock).not.toHaveBeenCalled();
   });
 
   it("names the missing prerequisites", async () => {

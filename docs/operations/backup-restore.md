@@ -21,6 +21,26 @@ build context, and must never be committed, attached to a ticket or pasted into 
 rehearsal below stays away from real data. They do not read `.env`: export
 `POSTGRES_USER` / `POSTGRES_DB` when they differ from `dashboard`.
 
+## Record the operation in the audit trail
+
+A backup or restore is an operator procedure, not a web action, so the scripts do not
+write the trail themselves (they must keep working without Node). Right after a
+successful step, record it through the one server-side helper:
+
+```sh
+npm run audit:operation -- backup.run SUCCESS
+npm run audit:operation -- restore.run SUCCESS
+```
+
+Use `FAILED` when the step failed and `REFUSED` when it was deliberately not attempted.
+The command writes an action code, an outcome and no path, dump name or database name.
+It needs the same server environment as the application (`DATABASE_URL`, `AUTH_SECRET`,
+`INTEGRATION_ENCRYPTION_KEY`), and resolves the single workspace; set
+`AUDIT_WORKSPACE_ID` only if several exist. Run it from the server's repository checkout
+(the database port is published on `127.0.0.1`), not from a machine without those
+secrets. The entry is visible on `/audit`, and the operator cleanup keeps it for 365 days
+(`AUDIT_RETENTION_DAYS`).
+
 ## Take and verify a backup
 
 **Read-only on the database.**

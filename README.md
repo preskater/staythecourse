@@ -113,6 +113,15 @@ Working today:
   silently exporting another period. Every delivered file writes one audit entry (scope,
   bounds, row count, truncation); a file whose entry cannot be written is withheld. An
   unknown value exports as an empty cell with its reason, never as a zero.
+- Audit trail (`/audit`): append-only and workspace-scoped entries for sign-in and
+  refusals, sign-out, session revocations, password changes,
+  transaction creation/edition/deletion/transfer/
+  reconciliation/salary booking, salary-rate changes, module toggles, provider
+  connections and synchronisations, exports, and operator backup/restore. Rows carry a
+  timestamp, an action code, an entity reference, an outcome and safe metadata (counts,
+  codes, calendar days) — never a label, an amount, a token or a password. Every writer
+  goes through one server helper; nothing exposes an update or a delete, and the only
+  pruning path is the documented 365-day operator job (`npm run db:cleanup`).
 - Real estate: properties and cashflow entries entered from the real-estate
   page, occupancy status, totals, due dates. A **Financement** card tracks the loans
   of a property — capital, a dated outstanding-balance snapshot, rate, term, monthly
@@ -401,7 +410,8 @@ secret must never be added to that block.
 | `npm run db:migrate` | Create and apply a migration (development) |
 | `npm run db:deploy` | Apply pending migrations (deployment) |
 | `npm run db:seed` | Create the owner account, or refresh its name (the stored password is kept) |
-| `npm run db:cleanup` | Delete synchronisation runs older than the retention window (keeps the latest success per connection) |
+| `npm run db:cleanup` | Delete synchronisation runs older than 90 days (keeps the latest success per connection) and audit events older than 365 days |
+| `npm run audit:operation -- backup.run SUCCESS` | Record an operator backup/restore in the audit trail |
 | `npm run db:studio` | Browse the database |
 
 ## Project structure
@@ -466,8 +476,9 @@ retried with bounded backoff; authentication, permission and not-found refusals 
 final. The number of retries is kept on the run.
 
 Run history is kept for 90 days (`SYNC_RUN_RETENTION_DAYS`), except the most recent
-successful run of each connection. `npm run db:cleanup` applies the policy and is safe
-to re-run; nothing schedules it. Provider snapshots are current state, not history: a
+successful run of each connection, and audit events for 365 days
+(`AUDIT_RETENTION_DAYS`). `npm run db:cleanup` applies both policies and is safe to
+re-run; nothing schedules it. Provider snapshots are current state, not history: a
 run replaces them, and closed issues leave the list, so they are not subject to this
 retention.
 
@@ -480,9 +491,11 @@ the action-level tests mock their modules. They cover what is expensive to get
 wrong: money and date handling, monthly totals (transfers counted by sign, refunds,
 currencies), CSV escaping and formula neutralisation, the export routes and the umbrella
 selector (filters and their boundaries, invalid windows, empty files, bounded reads,
-truncation header, owner scoping, audit entries), the audit metadata redaction, the
-password policy
-and the session guard, provider failure cases, issue filters and milestones.
+truncation header, owner scoping, audit entries), the audit metadata redaction and its
+append-only invariant, the audit entries written by transaction, password, module and
+synchronisation actions (including denials that write nothing), the password policy
+and the session guard, retention boundaries, provider failure cases, issue filters and
+milestones.
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
 install, generate the Prisma client, lint, type check, unit tests, apply the
