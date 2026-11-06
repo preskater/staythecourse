@@ -1,13 +1,13 @@
 import Decimal from "decimal.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const requireUserMock = vi.fn();
+const requirePermissionMock = vi.fn();
 const dismissAlertMock = vi.fn();
 const saveAlertRulesMock = vi.fn();
 const refreshAlertsMock = vi.fn();
 const revalidatePathMock = vi.fn();
 
-vi.mock("@/lib/auth/guard", () => ({ requireUser: () => requireUserMock() }));
+vi.mock("@/lib/auth/guard", () => ({ requirePermission: (...args: unknown[]) => requirePermissionMock(...args) }));
 vi.mock("@/modules/alerts/repository", () => ({
   dismissAlert: (...args: unknown[]) => dismissAlertMock(...args),
   saveAlertRules: (...args: unknown[]) => saveAlertRulesMock(...args),
@@ -30,7 +30,7 @@ const OWNER = {
   id: "owner-1",
   email: "owner@example.test",
   name: null,
-  workspace: { id: "ws-owner-1", modules: ["budget", "real-estate", "development"] },
+  workspace: { id: "ws-owner-1", role: "OWNER", modules: ["budget", "real-estate", "development"] },
 };
 
 const VALID_RULES = {
@@ -43,7 +43,7 @@ const VALID_RULES = {
 };
 
 beforeEach(() => {
-  requireUserMock.mockReset().mockResolvedValue(OWNER);
+  requirePermissionMock.mockReset().mockResolvedValue(OWNER);
   dismissAlertMock.mockReset().mockResolvedValue(true);
   saveAlertRulesMock.mockReset().mockResolvedValue(undefined);
   refreshAlertsMock.mockReset().mockResolvedValue({
@@ -182,5 +182,16 @@ describe("saveAlertRulesAction", () => {
       message: "Enregistrement impossible pour le moment. Réessayez dans un instant.",
     });
     consoleError.mockRestore();
+  });
+});
+
+describe("forged writes", () => {
+  it("propagates the guard's refusal and writes nothing for a viewer", async () => {
+    requirePermissionMock.mockRejectedValue(new Error("not-found"));
+
+    await expect(dismissAlertAction({ id: "alert-1" })).rejects.toThrow("not-found");
+
+    expect(requirePermissionMock).toHaveBeenCalledWith("write");
+    expect(dismissAlertMock).not.toHaveBeenCalled();
   });
 });

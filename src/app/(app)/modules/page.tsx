@@ -1,7 +1,7 @@
 import { Badge, Card, Notice, PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { MODULE_CATALOG, MODULE_KEYS, type ModuleKey } from "@/modules/catalog/catalog";
-import { canManageModules } from "@/modules/identity/workspace";
+import { hasPermission } from "@/modules/identity/permissions";
 import { ModuleToggle } from "./module-toggle";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ const CONSEQUENCES: Partial<Record<ModuleKey, string>> = {
 export default async function ModulesPage() {
   const user = await requireUser();
   const { workspace } = user;
-  const canManage = canManageModules(workspace.role);
+  const canManage = hasPermission(workspace.role, "manage-modules");
   const modules = MODULE_KEYS.filter((key) => MODULE_CATALOG[key].nav);
 
   return (

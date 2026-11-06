@@ -1,4 +1,4 @@
-import { requireApiUser, moduleUnavailableResponse, unauthorizedResponse } from "@/lib/auth/guard";
+import { requireApiAccess, moduleUnavailableResponse } from "@/lib/auth/guard";
 import { createCsvResponse } from "@/lib/csv";
 import {
   buildExport,
@@ -18,14 +18,15 @@ import type { AuditAction } from "@/modules/audit/domain";
  * Both entry points — the per-entity Route Handlers and the umbrella
  * `/api/export?entity=...` — end up here, in this order:
  *
- * 1. `requireApiUser()`: a signed-out request answers 401 and nothing is read;
- * 2. the entity's module must be active in the session's workspace, otherwise 404;
- * 3. the builder reads, owner-scoped, bounded, and never trusts an identifier from the
+ * 1. `requireApiAccess("export", …)`: a signed-out request answers 401, a module that is
+ *    not active in the workspace answers 404, and a role without the `export`
+ *    permission answers 403. Nothing is read in any of those cases;
+ * 2. the builder reads, owner-scoped, bounded, and never trusts an identifier from the
  *    query string;
- * 4. the audit entry is written (SO-02) — a failure refuses the file. Writing the entry
+ * 3. the audit entry is written (SO-02) — a failure refuses the file. Writing the entry
  *    after the read but before the response is deliberate: an export the trail does not
  *    know about is worse than an export delayed by a database error;
- * 5. `createCsvResponse` sets `no-store` and the truncation header, and `toCsv` has
+ * 4. `createCsvResponse` sets `no-store` and the truncation header, and `toCsv` has
  *    already neutralised every formula-shaped cell.
  *
  * The owner always comes from the session, never from a parameter: there is no `userId`
@@ -108,15 +109,18 @@ export async function serveEntityExport(
   return createCsvResponse(file.csv, file.fileName, { truncated: file.truncated });
 }
 
-/** Entry point of a per-entity Route Handler: checks the session, then delegates. */
+/** Entry point of a per-entity Route Handler: checks the session and role, then delegates. */
 export async function serveCsvExport(
   request: Request,
   entity: ExportEntity,
 ): Promise<Response> {
-  const user = await requireApiUser();
+  const moduleKey = EXPORT_MODULES[entity];
+  const user = moduleKey
+    ? await requireApiAccess("export", moduleKey)
+    : await requireApiAccess("export");
 
-  if (!user) {
-    return unauthorizedResponse();
+  if (user instanceof Response) {
+    return user;
   }
 
   return serveEntityExport(user, request, entity);

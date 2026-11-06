@@ -16,7 +16,7 @@ import { synchroniseConnection } from "@/jobs/sync";
  */
 
 export async function connectProviderAction(formData: FormData): Promise<void> {
-  const user = await requireModule("development");
+  const user = await requireModule("development", "write");
 
   const parsed = connectionInputSchema.safeParse({
     provider: formData.get("provider"),
@@ -44,7 +44,7 @@ export async function connectProviderAction(formData: FormData): Promise<void> {
 }
 
 export async function syncConnectionAction(formData: FormData): Promise<void> {
-  const user = await requireModule("development");
+  const user = await requireModule("development", "write");
   const connectionId = formData.get("connectionId");
 
   if (typeof connectionId !== "string" || connectionId === "") {

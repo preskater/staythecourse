@@ -45,7 +45,7 @@ import { findTransactionRef } from "@/modules/budget/repository";
  */
 
 export async function createPropertyAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = propertyInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -80,7 +80,7 @@ export async function createPropertyAction(values: unknown): Promise<ActionResul
 }
 
 export async function createPropertyValuationAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
   const parsed = propertyValuationInputSchema.safeParse(values);
   if (!parsed.success) {
     return invalidResult(parsed.error);
@@ -104,7 +104,7 @@ export async function createPropertyValuationAction(values: unknown): Promise<Ac
  * The update therefore never clears an existing sale.
  */
 export async function updatePropertyAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = propertyUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -147,7 +147,7 @@ export async function updatePropertyAction(values: unknown): Promise<ActionResul
  * keeps the record; this action is for a property that should never have been tracked.
  */
 export async function deletePropertyAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -178,7 +178,7 @@ export async function deletePropertyAction(values: unknown): Promise<ActionResul
  * It stays "unknown" (with its reason) when a figure it needs was never entered.
  */
 export async function sellPropertyAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = propertySaleInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -266,7 +266,7 @@ function revalidateProperty(propertyId: string): void {
 }
 
 export async function createCashflowAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = cashflowInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -337,7 +337,7 @@ export async function createCashflowAction(values: unknown): Promise<ActionResul
  */
 
 export async function createLoanAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = loanInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -363,7 +363,7 @@ export async function createLoanAction(values: unknown): Promise<ActionResult> {
 }
 
 export async function updateLoanAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = loanUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -397,7 +397,7 @@ export async function updateLoanAction(values: unknown): Promise<ActionResult> {
 }
 
 export async function deleteLoanAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {

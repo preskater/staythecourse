@@ -16,6 +16,9 @@ Working today:
 
 - Owner authentication (Auth.js credentials, no public sign-up), with a **Compte**
   page to change the owner password.
+- Workspace roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) enforced server-side: a
+  viewer can read but cannot write or export, an admin can manage members and modules
+  but can never remove or demote the owner.
 - Personal budget: accounts, categories, transactions entered from the budget
   page, monthly totals per currency, filters, CSV export, deletion with confirmation,
   correction of an existing operation and two charts (a 12-month trend and the month's

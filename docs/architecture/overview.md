@@ -13,7 +13,7 @@ the pages that consume it.
 
 | Module | Responsibility | Key files |
 | --- | --- | --- |
-| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`). No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts` |
+| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) and their permission presets. No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts`, `permissions.ts` |
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing and property indicators. | `domain.ts`, `kpis.ts`, `repository.ts` |
@@ -33,18 +33,54 @@ outside the web process.
 ```mermaid
 flowchart LR
   B[Browser] --> P[proxy.ts<br/>redirect if no session]
-  P --> Y[Page / Route Handler]
-  Y --> G["requireUser() / requireApiUser()"]
+  P --> Y[Page / Route Handler / Server Action]
+  Y --> G["requireUser() / requirePermission() / requireModule() / requireApiAccess()"]
   G --> M[Module: business rules]
   M --> R[repository.ts]
   R --> D[(PostgreSQL)]
 ```
 
 Two checks, one authority. The proxy only improves the user experience; the
-real authorisation check is `requireUser()` (pages) or `requireApiUser()`
-(Route Handlers), executed on the server for every request. Route Handlers
-answer `401` with a JSON body rather than redirecting, which is why API routes
-are excluded from the proxy matcher.
+real authorisation check is `requireUser()` (pages), `requirePermission()` and
+`requireModule()` (Server Actions) or `requireApiAccess()` (Route Handlers),
+executed on the server for every request. Route Handlers answer `401` with a JSON
+body rather than redirecting, which is why API routes are excluded from the proxy
+matcher.
+
+### Roles and permissions (M7-05)
+
+A membership carries one of four presets. `src/modules/identity/permissions.ts` is the
+only matrix; the guards compose it with the session and the active workspace.
+
+| Role | read | write | export | manage-modules | manage-members |
+| --- | --- | --- | --- | --- | --- |
+| `OWNER` | yes | yes | yes | yes | yes |
+| `ADMIN` | yes | yes | yes | yes | yes |
+| `MEMBER` | yes | yes | yes | no | no |
+| `VIEWER` | yes | no | no | no | no |
+
+- **Deny-by-default.** A permission absent from a preset is refused; an unknown role or
+  permission is refused too. `getSessionUser` requires `read`, and `requireModule` takes
+  the permission explicitly — there is no default that a new action could inherit by
+  omission.
+- **Writes.** Every mutating Server Action on workspace data calls
+  `requireModule(key, "write")` (or `requirePermission("write")` for alerts, which has no
+  catalog module). A viewer's forged POST therefore reaches no repository call. Module
+  settings check `hasPermission(role, "manage-modules")`; the account page's own
+  password and session actions ask only for the session, since they touch the caller's
+  credentials and no workspace data. The only read-only action, `simulateExpenseAction`,
+  asks for `read`.
+- **Exports.** Every CSV export goes through `serveCsvExport` in
+  `lib/export-route.ts` (the per-entity handlers and the umbrella `/api/export`), which
+  calls `requireApiAccess("export", …)` before any read: `401` when signed out, `404`
+  when the module is disabled, `403` with `{"error":"forbidden"}` when the role lacks
+  `export`. The audit entry is written only after the permission check.
+- **Member management.** `canRemoveMember` and `canChangeMemberRole` never let an admin
+  (or anyone else) remove or demote an owner, and nobody grants `OWNER` through this
+  path. Transferring ownership will be a separate, explicit operation (M8-01); role
+  changes will be audited with M18-02.
+- **Server-side only.** Pages may hide a control for comfort, but no component decides
+  access: the role is read from the session's membership on every request.
 
 ### Write path
 
@@ -52,7 +88,7 @@ Writes go through Server Actions, never through a Route Handler:
 
 ```mermaid
 flowchart LR
-  F["Form (client)<br/>react-hook-form + zod"] -->|values| A["Server Action<br/>requireUser() first"]
+  F["Form (client)<br/>react-hook-form + zod"] -->|values| A["Server Action<br/>requireModule(key, "write") first"]
   A --> V["Module schema,<br/>re-validated"]
   V --> O["Owner-scoped lookups<br/>findAccount / findProperty"]
   O --> R[repository.ts]
@@ -853,10 +889,12 @@ beside its fields.
   `profitability`, `automation`, `family`). A module is active in a workspace when its
   `WorkspaceModule` row is enabled and all its prerequisites are active
   (`profitability` needs `budget` and `real-estate`). The module's Server Actions call
-  `requireModule(key)`, which answers 404 otherwise; its exports answer a 404 JSON body.
-  Its pages check `hasModule` and render `ModuleDisabled` instead (a direct link explains
-  the state and reads nothing). The navigation is built by the server layout from the
-  active modules. Disabling only flips `enabled`: records and configuration stay.
+  `requireModule(key, permission)`, which answers 404 otherwise; its exports answer a
+  404 JSON body when the module is disabled and a 403 JSON body when the role lacks the
+  permission. Its pages check `hasModule` and render `ModuleDisabled` instead (a direct
+  link explains the state and reads nothing). The navigation is built by the server
+  layout from the active modules. Disabling only flips `enabled`: records and
+  configuration stay.
   Enabling writes the activation row only. The migration enables `budget`,
   `real-estate` and `development` on every existing workspace. The dashboard, the alerts
   and the account page are not modules, but the dashboard reads and shows only the
