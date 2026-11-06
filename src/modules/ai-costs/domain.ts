@@ -10,7 +10,10 @@
  * missing rate stays unknown.
  */
 export * from "./actuality";
+export * from "./allocation";
 export * from "./amount";
+export * from "./dimensions";
 export * from "./exchange";
+export * from "./ledger";
 export * from "./money";
 export * from "./source";

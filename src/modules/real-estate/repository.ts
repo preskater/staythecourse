@@ -12,6 +12,12 @@ import {
 } from "./domain";
 import type { LoanSummary } from "./loans";
 import type { DueCashflow } from "./alerts";
+import type {
+  PropertyEvent,
+  PropertyEventFilter,
+  PropertyEventKind,
+  PropertyEventStatus,
+} from "./events";
 import {
   computeEquity,
   computeSaleAnalysis,
@@ -713,6 +719,180 @@ export async function updateLoan(
 export async function deleteLoan(workspaceId: string, loanId: string): Promise<boolean> {
   const { count } = await getPrisma().propertyLoan.deleteMany({
     where: { id: loanId, property: { workspaceId } },
+  });
+
+  return count === 1;
+}
+
+/**
+ * Property events (RE-04). Every query is scoped to the workspace through the
+ * property, and the optional amount is stored as an exact two-decimal string.
+ */
+
+const PROPERTY_EVENT_SELECT = {
+  id: true,
+  propertyId: true,
+  kind: true,
+  label: true,
+  dueDate: true,
+  status: true,
+  amount: true,
+  currency: true,
+  notes: true,
+  createdAt: true,
+  updatedAt: true,
+  property: { select: { name: true } },
+} as const;
+
+type PropertyEventRow = {
+  id: string;
+  propertyId: string;
+  kind: string;
+  label: string;
+  dueDate: Date | null;
+  status: string;
+  amount: DecimalLike | null;
+  currency: string | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  property: { name: string };
+};
+
+function toPropertyEvent(row: PropertyEventRow): PropertyEvent {
+  return {
+    id: row.id,
+    propertyId: row.propertyId,
+    propertyName: row.property.name,
+    kind: row.kind as PropertyEventKind,
+    label: row.label,
+    dueDate: row.dueDate,
+    status: row.status as PropertyEventStatus,
+    amount: toOptionalDecimal(row.amount),
+    currency: row.currency === null ? null : assertCurrency(row.currency),
+    notes: row.notes,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Events of the workspace, optionally narrowed by property and status.
+ *
+ * Undated events are listed after dated ones: an event without a date has no place in
+ * a chronological list and is never considered overdue.
+ */
+export async function listPropertyEvents(
+  workspaceId: string,
+  filter: PropertyEventFilter = {},
+): Promise<PropertyEvent[]> {
+  const rows = await getPrisma().propertyEvent.findMany({
+    where: {
+      property: { workspaceId },
+      ...(filter.propertyId ? { propertyId: filter.propertyId } : {}),
+      ...(filter.status ? { status: filter.status } : {}),
+    },
+    orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }],
+    select: PROPERTY_EVENT_SELECT,
+  });
+
+  return rows.map(toPropertyEvent);
+}
+
+/** Owner-scoped event lookup: an identifier from a URL or a form is never trusted. */
+export async function findPropertyEvent(
+  workspaceId: string,
+  eventId: string,
+): Promise<PropertyEvent | null> {
+  const row = await getPrisma().propertyEvent.findFirst({
+    where: { id: eventId, property: { workspaceId } },
+    select: PROPERTY_EVENT_SELECT,
+  });
+
+  return row ? toPropertyEvent(row) : null;
+}
+
+export type PropertyEventWriteInput = {
+  propertyId: string;
+  kind: PropertyEventKind;
+  label: string;
+  dueDate: Date | null;
+  status: PropertyEventStatus;
+  /** Informational only: never part of a financial total. */
+  amount: Decimal | null;
+  currency: Currency | null;
+  notes: string | null;
+};
+
+function toPropertyEventData(input: PropertyEventWriteInput) {
+  return {
+    propertyId: input.propertyId,
+    kind: input.kind,
+    label: input.label.trim(),
+    dueDate: input.dueDate,
+    status: input.status,
+    amount: input.amount ? input.amount.toFixed(2) : null,
+    // A currency without an amount would be a figure with no meaning.
+    currency: input.amount ? input.currency : null,
+    notes: input.notes,
+  };
+}
+
+/**
+ * Creates an event for a property owned by the workspace.
+ *
+ * This writes **only** an event row: it never creates a transaction or a cashflow, so
+ * an obligation cannot turn into a duplicate payment by accident.
+ */
+export async function createPropertyEvent(
+  workspaceId: string,
+  input: PropertyEventWriteInput,
+): Promise<{ id: string } | null> {
+  const property = await getPrisma().property.findFirst({
+    where: { id: input.propertyId, workspaceId },
+    select: { id: true },
+  });
+  if (!property) {
+    return null;
+  }
+
+  return getPrisma().propertyEvent.create({
+    data: toPropertyEventData(input),
+    select: { id: true },
+  });
+}
+
+/**
+ * Updates an owner-scoped event. The target property is checked first when the event
+ * moves, so a crafted `propertyId` can never reach another owner's property.
+ */
+export async function updatePropertyEvent(
+  workspaceId: string,
+  eventId: string,
+  input: PropertyEventWriteInput,
+): Promise<boolean> {
+  const property = await getPrisma().property.findFirst({
+    where: { id: input.propertyId, workspaceId },
+    select: { id: true },
+  });
+  if (!property) {
+    return false;
+  }
+
+  const { count } = await getPrisma().propertyEvent.updateMany({
+    where: { id: eventId, property: { workspaceId } },
+    data: toPropertyEventData(input),
+  });
+
+  return count === 1;
+}
+
+export async function deletePropertyEvent(
+  workspaceId: string,
+  eventId: string,
+): Promise<boolean> {
+  const { count } = await getPrisma().propertyEvent.deleteMany({
+    where: { id: eventId, property: { workspaceId } },
   });
 
   return count === 1;

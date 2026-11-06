@@ -13,11 +13,12 @@ the pages that consume it.
 
 | Module | Responsibility | Key files |
 | --- | --- | --- |
-| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`). No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts` |
+| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) and their permission presets. No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts`, `permissions.ts` |
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
-| `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing and property indicators. | `domain.ts`, `kpis.ts`, `repository.ts` |
-| `ai-costs` | Exact cost amounts, each with a mandatory actuality and an immutable source reference (M9-01), and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). No provider call or allocation yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `exchange.ts`, `repository.ts` |
+| `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
+| `micro-business` | Clients and projects of a commercial workspace: billing model, status, reference currency, key dates, archive/restore. No revenue entry or invoice yet (M10-02). | `domain.ts`, `repository.ts` |
+| `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period), their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions, and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). Conservation is exact in cents; finalized entries are immutable. No provider call yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `exchange.ts`, `repository.ts` |
 | `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots. | `domain.ts`, `adapter.ts`, `github.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
@@ -33,18 +34,54 @@ outside the web process.
 ```mermaid
 flowchart LR
   B[Browser] --> P[proxy.ts<br/>redirect if no session]
-  P --> Y[Page / Route Handler]
-  Y --> G["requireUser() / requireApiUser()"]
+  P --> Y[Page / Route Handler / Server Action]
+  Y --> G["requireUser() / requirePermission() / requireModule() / requireApiAccess()"]
   G --> M[Module: business rules]
   M --> R[repository.ts]
   R --> D[(PostgreSQL)]
 ```
 
 Two checks, one authority. The proxy only improves the user experience; the
-real authorisation check is `requireUser()` (pages) or `requireApiUser()`
-(Route Handlers), executed on the server for every request. Route Handlers
-answer `401` with a JSON body rather than redirecting, which is why API routes
-are excluded from the proxy matcher.
+real authorisation check is `requireUser()` (pages), `requirePermission()` and
+`requireModule()` (Server Actions) or `requireApiAccess()` (Route Handlers),
+executed on the server for every request. Route Handlers answer `401` with a JSON
+body rather than redirecting, which is why API routes are excluded from the proxy
+matcher.
+
+### Roles and permissions (M7-05)
+
+A membership carries one of four presets. `src/modules/identity/permissions.ts` is the
+only matrix; the guards compose it with the session and the active workspace.
+
+| Role | read | write | export | manage-modules | manage-members |
+| --- | --- | --- | --- | --- | --- |
+| `OWNER` | yes | yes | yes | yes | yes |
+| `ADMIN` | yes | yes | yes | yes | yes |
+| `MEMBER` | yes | yes | yes | no | no |
+| `VIEWER` | yes | no | no | no | no |
+
+- **Deny-by-default.** A permission absent from a preset is refused; an unknown role or
+  permission is refused too. `getSessionUser` requires `read`, and `requireModule` takes
+  the permission explicitly — there is no default that a new action could inherit by
+  omission.
+- **Writes.** Every mutating Server Action on workspace data calls
+  `requireModule(key, "write")` (or `requirePermission("write")` for alerts, which has no
+  catalog module). A viewer's forged POST therefore reaches no repository call. Module
+  settings check `hasPermission(role, "manage-modules")`; the account page's own
+  password and session actions ask only for the session, since they touch the caller's
+  credentials and no workspace data. The only read-only action, `simulateExpenseAction`,
+  asks for `read`.
+- **Exports.** Every CSV export goes through `serveCsvExport` in
+  `lib/export-route.ts` (the per-entity handlers and the umbrella `/api/export`), which
+  calls `requireApiAccess("export", …)` before any read: `401` when signed out, `404`
+  when the module is disabled, `403` with `{"error":"forbidden"}` when the role lacks
+  `export`. The audit entry is written only after the permission check.
+- **Member management.** `canRemoveMember` and `canChangeMemberRole` never let an admin
+  (or anyone else) remove or demote an owner, and nobody grants `OWNER` through this
+  path. Transferring ownership will be a separate, explicit operation (M8-01); role
+  changes will be audited with M18-02.
+- **Server-side only.** Pages may hide a control for comfort, but no component decides
+  access: the role is read from the session's membership on every request.
 
 ### Write path
 
@@ -52,7 +89,7 @@ Writes go through Server Actions, never through a Route Handler:
 
 ```mermaid
 flowchart LR
-  F["Form (client)<br/>react-hook-form + zod"] -->|values| A["Server Action<br/>requireUser() first"]
+  F["Form (client)<br/>react-hook-form + zod"] -->|values| A["Server Action<br/>requireModule(key, "write") first"]
   A --> V["Module schema,<br/>re-validated"]
   V --> O["Owner-scoped lookups<br/>findAccount / findProperty"]
   O --> R[repository.ts]
@@ -135,6 +172,16 @@ asked for: a cascade here would silently change what a property is worth.
   neighbouring month. The end-of-month bound is exclusive.
 - **Currencies** are stored per row. A total is always computed per currency;
   mixing currencies raises an error instead of inventing an exchange rate.
+- **Clients and projects** belong to one workspace. A project's `billingModel` is an
+  explicit enum, never inferred: `billingBehaviour` marks `FIXED_PRICE`,
+  `TIME_AND_MATERIALS` and `RETAINER` as billable — they are where revenue will be
+  recognised — and `INTERNAL` and `NON_BILLABLE` as producing none. A billable project
+  requires a client; the other two may go without one. `currency` is the project's own
+  reference currency and is never converted. `status` (`ACTIVE`/`COMPLETED`) is the
+  owner's decision, while `archivedAt` is a separate reversible stamp: archiving writes
+  no other column, so an archived client or project keeps its details, its dates and its
+  links, and restoring only clears the stamp. Names are unique per workspace, archived
+  rows included. Only `OWNER` and `ADMIN` write these records; every member reads them.
 - **Cost ledger primitives** live in `src/modules/ai-costs` and follow the same money
   rules. A provider export may carry more than two decimals; it is rounded **half-up
   to the cent** exactly once, at the boundary (`roundToCents`), and the original
@@ -147,6 +194,20 @@ asked for: a cascade here would silently change what a property is worth.
   answer different questions and are never derived from one another. Source references
   are frozen, hold identifiers only, and reject token-shaped values, so a secret is
   never stored as a source.
+- **Cost ledger** (`CostEntry` / `CostAllocation`, M9-02) persists those primitives.
+  An entry covers an inclusive `periodStart`..`periodEnd`, may carry dimensions that
+  are already known, and is either `DRAFT` or `FINALIZED`. An allocation is a split of
+  one entry that must name at least one dimension or tag; dimensions are nullable
+  strings because the project/client/developer tables arrive later. The **unallocated
+  remainder is derived** (`entry.amount - sum(allocations)`), never stored, so it cannot
+  drift. Every write checks `allocated + unallocated === total` in integer cents: an
+  allocation may not exceed the total or carry the opposite sign. A weighted split uses
+  the **largest remainder** method (`allocateCents`): floor each exact share, then give
+  the leftover cents to the largest fractional remainders, ties to the earliest part, so
+  the result is deterministic and conserves the total. A finalization locks the entry
+  and its allocations in one transaction (`SELECT ... FOR UPDATE`); later writes are
+  refused and a correction is a new entry. `CostAllocation` is a child table: it has no
+  `workspaceId` and is reachable only through its workspace-scoped entry.
 - **Exchange rates** are stored as **snapshots** (`ExchangeRateSnapshot`), never as a
   mutable setting. A snapshot is one pair (`baseCurrency`/`quoteCurrency` read "1 base is
   worth `rate` quote"), an exact rate with ten decimals, the calendar day it is in force
@@ -278,6 +339,20 @@ asked for: a cascade here would silently change what a property is worth.
   totals would double-count it. A missing figure — a balance, a rate, a term — reads
   « inconnu », never zero. Currencies are never converted: financing is totalled per
   currency.
+- **Property events** (RE-04) describe obligations that are not financial entries yet:
+  a tax, an insurance premium, maintenance, a lease renewal, an inspection, a loan
+  deadline or renovation work. An event carries a kind, a label, an optional calendar
+  day (`dueDate`), a status (`PLANNED`, `DONE`, `CANCELLED`), notes and an optional
+  **informational** amount with its currency. It is owner-scoped through its property.
+- **Due-state model** — the state is derived from the status and the date, never
+  stored. `DONE` and `CANCELLED` always win; a planned event with no date is `NO_DATE`
+  (never overdue); otherwise a date before today is `OVERDUE`, today is `DUE_TODAY` and
+  a later date is `UPCOMING`. Calendar days are compared in UTC, so a time of day cannot
+  move an event into another state, and an absent date is never fabricated.
+- **The event amount never feeds a total.** It is labelled « indicatif » in the
+  interface: `computePropertyTotals`, the KPI figures and the budget stay cashflow-only.
+  Creating or editing an event writes only the event row and never a transaction, so an
+  obligation cannot become a duplicate payment.
 
 ## Documented indicator definitions
 
@@ -870,10 +945,12 @@ beside its fields.
   `profitability`, `automation`, `family`). A module is active in a workspace when its
   `WorkspaceModule` row is enabled and all its prerequisites are active
   (`profitability` needs `budget` and `real-estate`). The module's Server Actions call
-  `requireModule(key)`, which answers 404 otherwise; its exports answer a 404 JSON body.
-  Its pages check `hasModule` and render `ModuleDisabled` instead (a direct link explains
-  the state and reads nothing). The navigation is built by the server layout from the
-  active modules. Disabling only flips `enabled`: records and configuration stay.
+  `requireModule(key, permission)`, which answers 404 otherwise; its exports answer a
+  404 JSON body when the module is disabled and a 403 JSON body when the role lacks the
+  permission. Its pages check `hasModule` and render `ModuleDisabled` instead (a direct
+  link explains the state and reads nothing). The navigation is built by the server
+  layout from the active modules. Disabling only flips `enabled`: records and
+  configuration stay.
   Enabling writes the activation row only. The migration enables `budget`,
   `real-estate` and `development` on every existing workspace. The dashboard, the alerts
   and the account page are not modules, but the dashboard reads and shows only the
@@ -1218,6 +1295,7 @@ seeded generator is enough, at the cost of no automatic shrinking of a failing c
 | Owner scoping: every repository function opens with a query scoped to `workspaceId` (M7-04) or `userId` | `owner-scoping.test.ts` (fake client records the first queries; exemptions listed with their reason) |
 | Exact money, month windows that tile the calendar | `money.test.ts` |
 | Cashflow amount XOR linked transaction, counted once | `ledger.test.ts` |
+| Cost allocations conserve every cent (largest remainder, sign of credits) | `ledger.test.ts` and `src/modules/ai-costs/allocation.test.ts` |
 | Transfers count by sign; the volume is a subset, never extra | `ledger.test.ts` |
 | Idempotent synchronisation, pruning only after a complete run | `sync-idempotence.test.ts` (real save functions, in-memory tables) |
 | Plain DTOs for client forms | `client-boundary.test.ts` |
@@ -1264,7 +1342,12 @@ age is not restorability: that verification is SO-04.
   deleted, each with its usage counts shown first. Properties and cashflow entries
   still cannot be edited or deleted from the interface.
 - No document/attachment storage.
-- The `ai-costs` module ships its money, actuality and source primitives only: no cost
-  entry, allocation, import or provider synchronisation exists yet.
+- The `ai-costs` module persists cost entries and allocations, but there is no cost
+  UI, no import, no provider synchronisation, no exchange-rate conversion and no
+  profitability calculation yet. Finalization is per entry, not a separate
+  period-closing record: every entry of a period must be finalized to close it.
+- The `micro-business` module ships clients and projects only: no revenue entry,
+  invoice, credit note, payment, rate card or business expense exists yet (M10-02 and
+  later). No client or project is deleted, only archived.
 - The integrations page triggers a synchronisation on demand; no scheduler entry
   point (cron unit, platform job) ships with the repository yet.

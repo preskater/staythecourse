@@ -16,6 +16,9 @@ Working today:
 
 - Owner authentication (Auth.js credentials, no public sign-up), with a **Compte**
   page to change the owner password.
+- Workspace roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) enforced server-side: a
+  viewer can read but cannot write or export, an admin can manage members and modules
+  but can never remove or demote the owner.
 - Personal budget: accounts, categories, transactions entered from the budget
   page, monthly totals per currency, filters, CSV export, deletion with confirmation,
   correction of an existing operation and two charts (a 12-month trend and the month's
@@ -131,6 +134,23 @@ Working today:
   computed says why (no acquisition price, incomplete year, another currency, missing
   loan payment) instead of showing a zero, and a window without any cashflow prints no
   figures at all.
+- Micro-business (`/micro-business`, module key `micro-business`): clients and projects,
+  both archived rather than deleted — archiving writes only a reversible stamp, so every
+  field, date and client link survives and restoring clears it. A project carries an
+  explicit billing model (`FIXED_PRICE`, `TIME_AND_MATERIALS`, `RETAINER`, `INTERNAL`,
+  `NON_BILLABLE`), a status, its own reference currency and optional start/end dates; a
+  billable model requires a client, and `INTERNAL`/`NON_BILLABLE` are shown as producing
+  no revenue. Create/edit through `?editClient=` / `?editProject=`. Only `OWNER` and
+  `ADMIN` write; every member of the workspace reads. No revenue entry or invoice exists
+  yet (M10-02).
+- Property events (real-estate, « Échéances et obligations »): taxes, insurance,
+  maintenance, leases, inspections, loan deadlines and renovation tracked as dated
+  reminders — kind, optional calendar date, status (planned, done, cancelled), notes and
+  an optional **informational** amount. The due state is derived (upcoming, due today,
+  overdue, done, cancelled, no date): an undated event is never overdue and no date is
+  ever invented. The list filters by property and status, and create/edit/delete run
+  through owner-scoped Server Actions. Saving an event never creates a transaction, and
+  its amount is labelled « indicatif »: it never enters the property totals.
 - GitHub / GitLab connections: read-only adapters, encrypted tokens, manual
   synchronisation, project snapshots, and a small GitHub: open issues and pull
   requests counted per repository, an explorer with combinable filters (repository,

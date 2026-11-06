@@ -127,6 +127,61 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       date,
     ],
     saveAlertRules: [OWNER, [{ kind: "fixture", enabled: true }]],
+    listCostEntries: [OWNER, {}],
+    createCostEntry: [
+      OWNER,
+      {
+        amount: new Decimal("12.34"),
+        currency: "EUR",
+        actuality: "observed",
+        source: { kind: "manual", enteredBy: "fixture", capturedAt: date },
+        periodStart: date,
+        periodEnd: date,
+        notes: null,
+        dimensions: { projectId: "fixture" },
+      },
+    ],
+    updateCostEntry: [
+      OWNER,
+      "fixture",
+      {
+        amount: new Decimal("12.34"),
+        currency: "EUR",
+        actuality: "observed",
+        source: { kind: "manual", enteredBy: "fixture", capturedAt: date },
+        periodStart: date,
+        periodEnd: date,
+        notes: null,
+        dimensions: { projectId: "fixture" },
+      },
+    ],
+    createCostAllocation: [
+      OWNER,
+      {
+        entryId: "fixture",
+        amount: new Decimal("1.00"),
+        dimensions: { projectId: "fixture" },
+      },
+    ],
+    updateCostAllocation: [
+      OWNER,
+      "fixture",
+      { amount: new Decimal("1.00"), dimensions: { projectId: "fixture" } },
+    ],
+    recordExchangeRate: [
+      {
+        workspaceId: OWNER,
+        baseCurrency: "USD",
+        quoteCurrency: "EUR",
+        rate: new Decimal("0.9234567891"),
+        rateDate: date,
+        source: { kind: "manual", enteredBy: "fixture", capturedAt: date },
+      },
+    ],
+    findExchangeRateSnapshot: [
+      OWNER,
+      { baseCurrency: "USD", quoteCurrency: "EUR", asOf: date },
+    ],
   };
   if (special[name]) return special[name];
   return /^async function \w+\(\s*input\b/.test(fn.toString())
@@ -150,9 +205,11 @@ function placeholderFor(key: string, date: Date): unknown {
 const MODULES = {
   budget: () => import("@/modules/budget/repository"),
   realEstate: () => import("@/modules/real-estate/repository"),
+  microBusiness: () => import("@/modules/micro-business/repository"),
   alerts: () => import("@/modules/alerts/repository"),
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
+  aiCosts: () => import("@/modules/ai-costs/repository"),
 };
 
 async function firstQueriesOf(fn: (...args: unknown[]) => unknown, name: string) {
