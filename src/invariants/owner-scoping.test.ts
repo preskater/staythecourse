@@ -127,6 +127,47 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       date,
     ],
     saveAlertRules: [OWNER, [{ kind: "fixture", enabled: true }]],
+    listCostEntries: [OWNER, {}],
+    createCostEntry: [
+      OWNER,
+      {
+        amount: new Decimal("12.34"),
+        currency: "EUR",
+        actuality: "observed",
+        source: { kind: "manual", enteredBy: "fixture", capturedAt: date },
+        periodStart: date,
+        periodEnd: date,
+        notes: null,
+        dimensions: { projectId: "fixture" },
+      },
+    ],
+    updateCostEntry: [
+      OWNER,
+      "fixture",
+      {
+        amount: new Decimal("12.34"),
+        currency: "EUR",
+        actuality: "observed",
+        source: { kind: "manual", enteredBy: "fixture", capturedAt: date },
+        periodStart: date,
+        periodEnd: date,
+        notes: null,
+        dimensions: { projectId: "fixture" },
+      },
+    ],
+    createCostAllocation: [
+      OWNER,
+      {
+        entryId: "fixture",
+        amount: new Decimal("1.00"),
+        dimensions: { projectId: "fixture" },
+      },
+    ],
+    updateCostAllocation: [
+      OWNER,
+      "fixture",
+      { amount: new Decimal("1.00"), dimensions: { projectId: "fixture" } },
+    ],
   };
   if (special[name]) return special[name];
   return /^async function \w+\(\s*input\b/.test(fn.toString())
@@ -153,6 +194,7 @@ const MODULES = {
   alerts: () => import("@/modules/alerts/repository"),
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
+  aiCosts: () => import("@/modules/ai-costs/repository"),
 };
 
 async function firstQueriesOf(fn: (...args: unknown[]) => unknown, name: string) {

@@ -17,7 +17,7 @@ the pages that consume it.
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
-| `ai-costs` | Exact cost amounts, each with a mandatory actuality and an immutable source reference. Primitives only: no persistence, provider call or allocation yet (M9-01). | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts` |
+| `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period) and their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions. Conservation is exact in cents; finalized entries are immutable. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `repository.ts` |
 | `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots. | `domain.ts`, `adapter.ts`, `github.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
@@ -183,6 +183,20 @@ asked for: a cascade here would silently change what a property is worth.
   answer different questions and are never derived from one another. Source references
   are frozen, hold identifiers only, and reject token-shaped values, so a secret is
   never stored as a source.
+- **Cost ledger** (`CostEntry` / `CostAllocation`, M9-02) persists those primitives.
+  An entry covers an inclusive `periodStart`..`periodEnd`, may carry dimensions that
+  are already known, and is either `DRAFT` or `FINALIZED`. An allocation is a split of
+  one entry that must name at least one dimension or tag; dimensions are nullable
+  strings because the project/client/developer tables arrive later. The **unallocated
+  remainder is derived** (`entry.amount - sum(allocations)`), never stored, so it cannot
+  drift. Every write checks `allocated + unallocated === total` in integer cents: an
+  allocation may not exceed the total or carry the opposite sign. A weighted split uses
+  the **largest remainder** method (`allocateCents`): floor each exact share, then give
+  the leftover cents to the largest fractional remainders, ties to the earliest part, so
+  the result is deterministic and conserves the total. A finalization locks the entry
+  and its allocations in one transaction (`SELECT ... FOR UPDATE`); later writes are
+  refused and a correction is a new entry. `CostAllocation` is a child table: it has no
+  `workspaceId` and is reachable only through its workspace-scoped entry.
 - **Imports** are made re-runnable by a unique constraint on
   `(accountId, externalRef)`: replaying an import fails loudly instead of
   duplicating a line. The manual CSV import (page « Importer un CSV », see below) uses
@@ -1253,6 +1267,7 @@ seeded generator is enough, at the cost of no automatic shrinking of a failing c
 | Owner scoping: every repository function opens with a query scoped to `workspaceId` (M7-04) or `userId` | `owner-scoping.test.ts` (fake client records the first queries; exemptions listed with their reason) |
 | Exact money, month windows that tile the calendar | `money.test.ts` |
 | Cashflow amount XOR linked transaction, counted once | `ledger.test.ts` |
+| Cost allocations conserve every cent (largest remainder, sign of credits) | `ledger.test.ts` and `src/modules/ai-costs/allocation.test.ts` |
 | Transfers count by sign; the volume is a subset, never extra | `ledger.test.ts` |
 | Idempotent synchronisation, pruning only after a complete run | `sync-idempotence.test.ts` (real save functions, in-memory tables) |
 | Plain DTOs for client forms | `client-boundary.test.ts` |
@@ -1299,7 +1314,9 @@ age is not restorability: that verification is SO-04.
   deleted, each with its usage counts shown first. Properties and cashflow entries
   still cannot be edited or deleted from the interface.
 - No document/attachment storage.
-- The `ai-costs` module ships its money, actuality and source primitives only: no cost
-  entry, allocation, import or provider synchronisation exists yet.
+- The `ai-costs` module persists cost entries and allocations, but there is no cost
+  UI, no import, no provider synchronisation, no exchange-rate conversion and no
+  profitability calculation yet. Finalization is per entry, not a separate
+  period-closing record: every entry of a period must be finalized to close it.
 - The integrations page triggers a synchronisation on demand; no scheduler entry
   point (cron unit, platform job) ships with the repository yet.

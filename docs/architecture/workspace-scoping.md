@@ -18,8 +18,9 @@ No row is inserted, deleted or rewritten beyond the new column. The whole migrat
 in one transaction: a failure leaves the database as it was.
 
 Child tables (`PropertyLoan`, `PropertyCashflow`, `ProjectSnapshot`, `IssueSnapshot`,
-`MilestoneSnapshot`, `ProviderCacheEntry`, `SyncRun`) get no column: they are only
-reachable through their property or connection, which carries it.
+`MilestoneSnapshot`, `ProviderCacheEntry`, `SyncRun`, `CostAllocation`) get no column:
+they are only reachable through their property, connection or cost entry, which
+carries it.
 
 ## Verify on a copy before production
 
