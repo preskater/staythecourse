@@ -37,7 +37,7 @@ function duplicateKey(date: Date, label: string, amount: string): string {
 export async function importTransactionsAction(
   values: unknown,
 ): Promise<ImportActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = importSubmissionSchema.safeParse(values);
   if (!parsed.success) {

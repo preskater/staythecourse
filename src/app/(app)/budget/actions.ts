@@ -100,7 +100,7 @@ import { runExpenseSimulation } from "@/modules/budget/simulation-service";
  */
 
 export async function createAccountAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = accountInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -124,7 +124,7 @@ export async function createAccountAction(values: unknown): Promise<ActionResult
 }
 
 export async function createCategoryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = categoryInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -146,7 +146,7 @@ export async function createCategoryAction(values: unknown): Promise<ActionResul
 }
 
 export async function createTransactionAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = transactionFormSchema.safeParse(values);
   if (!parsed.success) {
@@ -196,7 +196,7 @@ export type ExpenseSimulationActionResult =
 export async function simulateExpenseAction(
   values: unknown,
 ): Promise<ExpenseSimulationActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "read");
   const parsed = expenseSimulationSchema.safeParse(values);
   if (!parsed.success) {
     return invalidResult(parsed.error) as ExpenseSimulationActionResult;
@@ -233,7 +233,7 @@ export async function simulateExpenseAction(
  * of a correction nobody asked to recreate.
  */
 export async function updateTransactionAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = transactionUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -299,7 +299,7 @@ export async function updateTransactionAction(values: unknown): Promise<ActionRe
  * owner can no longer see. Naming the property is more useful than a crash later.
  */
 export async function deleteTransactionAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -373,7 +373,7 @@ async function resolveBudgetInput(
 }
 
 export async function createBudgetAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = budgetInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -410,7 +410,7 @@ export async function createBudgetAction(values: unknown): Promise<ActionResult>
 
 /** Edits one monthly budget in place; same rules as the creation. */
 export async function updateBudgetAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = budgetUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -453,7 +453,7 @@ export async function updateBudgetAction(values: unknown): Promise<ActionResult>
 
 /** Removes one monthly budget. The two-step confirmation lives in the client component. */
 export async function deleteBudgetAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -483,7 +483,7 @@ export async function deleteBudgetAction(values: unknown): Promise<ActionResult>
  * `salaryEquivalents`).
  */
 export async function saveSalarySettingAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = salarySettingInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -528,7 +528,7 @@ export async function saveSalarySettingAction(values: unknown): Promise<ActionRe
  * two rows.
  */
 export async function cycleWorkDayAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = workDayInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -588,7 +588,7 @@ export async function cycleWorkDayAction(values: unknown): Promise<ActionResult>
 
 /** Half-hour adjustment of one planned or worked day. */
 export async function adjustWorkDayHoursAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = workDayHoursInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -631,7 +631,7 @@ export async function adjustWorkDayHoursAction(values: unknown): Promise<ActionR
  * show the recorded entry instead of the button.
  */
 export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = salaryBookingInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -731,7 +731,7 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
  * archived account can still be renamed — restoring it is a separate tick.
  */
 export async function updateAccountAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = accountUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -786,7 +786,7 @@ export async function updateAccountAction(values: unknown): Promise<ActionResult
  * clears the stamp.
  */
 export async function setAccountArchivedAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = accountArchiveSchema.safeParse(values);
   if (!parsed.success) {
@@ -820,7 +820,7 @@ export async function setAccountArchivedAction(values: unknown): Promise<ActionR
  * past, so the action refuses and points at merging instead.
  */
 export async function updateCategoryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = categoryUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -877,7 +877,7 @@ export async function updateCategoryAction(values: unknown): Promise<ActionResul
  * the wrong side of every report.
  */
 export async function mergeCategoriesAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = categoryMergeSchema.safeParse(values);
   if (!parsed.success) {
@@ -949,7 +949,7 @@ export async function mergeCategoriesAction(values: unknown): Promise<ActionResu
  * (their amounts stay), and the category's budgets are deleted with it.
  */
 export async function deleteCategoryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -980,7 +980,7 @@ export async function deleteCategoryAction(values: unknown): Promise<ActionResul
  * account statements.
  */
 export async function createTransferAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = transferInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -1045,7 +1045,7 @@ export async function createTransferAction(values: unknown): Promise<ActionResul
  * tickable like any other row.
  */
 export async function setTransactionReconciledAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = reconciliationInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -1078,7 +1078,7 @@ export async function setTransactionReconciledAction(values: unknown): Promise<A
  * source month is a plain answer, not an error.
  */
 export async function copyBudgetsAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = budgetCopySchema.safeParse(values);
   if (!parsed.success) {

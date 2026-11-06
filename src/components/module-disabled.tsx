@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Notice, PageHeader } from "@/components/ui";
 import { MODULE_CATALOG, type ModuleKey } from "@/modules/catalog/catalog";
-import { canManageModules, type ActiveWorkspace } from "@/modules/identity/workspace";
+import { hasPermission } from "@/modules/identity/permissions";
+import type { ActiveWorkspace } from "@/modules/identity/workspace";
 
 /**
  * What a direct link to an inactive module shows instead of a 404: the state is
@@ -22,7 +23,7 @@ export function ModuleDisabled({
       <Notice tone="info">
         Le module « {label} » n&apos;est pas actif dans l&apos;espace « {workspace.name} ».
         Ses données sont conservées telles quelles et réapparaîtront dès sa réactivation.{" "}
-        {canManageModules(workspace.role) ? (
+        {hasPermission(workspace.role, "manage-modules") ? (
           <Link href="/modules" className="underline underline-offset-2">
             Gérer les modules
           </Link>

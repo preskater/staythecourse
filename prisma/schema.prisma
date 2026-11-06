@@ -68,6 +68,24 @@ enum ProjectStatus {
   COMPLETED
 }
 
+/// Recurring obligations of a property that are not financial transactions yet.
+enum PropertyEventKind {
+  TAX
+  INSURANCE
+  MAINTENANCE
+  LEASE
+  INSPECTION
+  LOAN
+  RENOVATION
+  OTHER
+}
+
+enum PropertyEventStatus {
+  PLANNED
+  DONE
+  CANCELLED
+}
+
 enum IntegrationProvider {
   GITHUB
   GITLAB
@@ -173,6 +191,28 @@ enum WorkspaceRole {
   VIEWER
 }
 
+/// How much trust a cost figure deserves (M9-01 vocabulary, stored uppercase).
+enum CostActuality {
+  OBSERVED
+  DERIVED
+  ALLOCATED
+  ESTIMATED
+  RECONCILED
+}
+
+/// Where a cost figure came from. The reference holds identifiers only, never a token.
+enum CostSourceKind {
+  PROVIDER
+  IMPORT
+  MANUAL
+}
+
+/// A draft entry can be edited and allocated; a finalized one is history.
+enum CostEntryStatus {
+  DRAFT
+  FINALIZED
+}
+
 /// A space (personal, family, company) whose members share its data.
 /// Every budget, real-estate, integration and alert record belongs to one (M7-04).
 model Workspace {
@@ -203,6 +243,7 @@ model Workspace {
   alerts               Alert[]
   alertRules           AlertRule[]
   auditEvents          AuditEvent[]
+  costEntries          CostEntry[]
 }
 
 /// Activation of one catalog module (`src/modules/catalog`) in one workspace. The key is
@@ -629,6 +670,7 @@ model Property {
   cashflows PropertyCashflow[]
   loans     PropertyLoan[]
   valuations PropertyValuation[]
+  events    PropertyEvent[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -775,6 +817,38 @@ model Project {
   @@unique([workspaceId, name])
   @@index([workspaceId])
   @@index([workspaceId, clientId])
+}
+
+/// A dated obligation of a property: a tax, an insurance premium, a lease renewal,
+/// an inspection, a loan deadline or renovation work.
+///
+/// An event is a reminder, not a financial entry: its optional `amount` is
+/// **informational only** and never enters the property totals or the budget. Only a
+/// transaction (or a cashflow entry) moves money, so creating an event can never create
+/// a duplicate payment.
+///
+/// `dueDate` is a calendar day. An event without a date is never overdue: it stays
+/// explicitly undated rather than borrowing a date it does not have.
+model PropertyEvent {
+  id         String              @id @default(cuid())
+  propertyId String
+  kind       PropertyEventKind
+  label      String
+  /// Calendar day the obligation is due; null = no date recorded yet.
+  dueDate    DateTime?           @db.Date
+  status     PropertyEventStatus @default(PLANNED)
+  /// Indicative amount, positive; null = not recorded. Never part of a financial total.
+  amount     Decimal?            @db.Decimal(18, 2)
+  /// Currency of `amount`; null when no amount is recorded.
+  currency   String?             @db.Char(3)
+  notes      String?
+  createdAt  DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime            @updatedAt @db.Timestamptz(3)
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, dueDate])
+  @@index([propertyId, status])
 }
 
 /// Read-only connection to a GitHub or GitLab instance.
@@ -1079,6 +1153,83 @@ model AlertRule {
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, kind])
+}
+
+/// One canonical cost: what was spent, in which currency and how far it is trusted.
+///
+/// Dimensions are optional on the entry (a cost can be recorded before it is known
+/// where it belongs) and nullable everywhere, so the ledger does not require the
+/// project/client/developer tables that arrive in later milestones. `amount` is
+/// signed and exact: negative is a credit or a refund.
+model CostEntry {
+  id               String          @id @default(cuid())
+  workspaceId      String
+  amount           Decimal         @db.Decimal(18, 2)
+  currency         String          @default("EUR") @db.Char(3)
+  actuality        CostActuality
+  sourceKind       CostSourceKind
+  sourceProvider   String?
+  sourceExternalId String?
+  sourceImportId   String?
+  sourceRowNumber  Int?
+  sourceEnteredBy  String?
+  sourceCapturedAt DateTime        @db.Timestamptz(3)
+  /// First calendar day covered, inclusive.
+  periodStart      DateTime        @db.Date
+  /// Last calendar day covered, inclusive.
+  periodEnd        DateTime        @db.Date
+  notes            String?
+  projectId        String?
+  clientId         String?
+  repository       String?
+  developerId      String?
+  agentId          String?
+  issueId          String?
+  pullRequestId    String?
+  environment      String?
+  tags             String[]        @default([])
+  status           CostEntryStatus @default(DRAFT)
+  finalizedAt      DateTime?       @db.Timestamptz(3)
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @db.Timestamptz(3)
+
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  allocations CostAllocation[]
+
+  @@index([workspaceId, periodStart])
+  @@index([workspaceId, status])
+  @@index([workspaceId, projectId])
+  @@index([workspaceId, clientId])
+  @@index([workspaceId, repository])
+}
+
+/// A split of one entry across dimensions. The unallocated remainder is derived
+/// (`entry.amount - sum(allocations)`), never stored, so it cannot drift.
+///
+/// This is a child table: it carries no `workspaceId` and is reached only through
+/// its entry, which is workspace-scoped (M7-04). A finalized entry locks every write.
+model CostAllocation {
+  id            String   @id @default(cuid())
+  entryId       String
+  amount        Decimal  @db.Decimal(18, 2)
+  projectId     String?
+  clientId      String?
+  repository    String?
+  developerId   String?
+  agentId       String?
+  issueId       String?
+  pullRequestId String?
+  environment   String?
+  tags          String[] @default([])
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  entry CostEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+  @@index([projectId])
+  @@index([clientId])
+  @@index([repository])
 }
 
 /// One security-relevant or data-changing action, kept for the owner's own review.

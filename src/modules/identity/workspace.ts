@@ -48,11 +48,6 @@ export function resolveActiveWorkspace(
   return memberships[0] ?? null;
 }
 
-/** Enabling or disabling a workspace's modules is reserved to its owner and admins. */
-export function canManageModules(role: WorkspaceRole): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
 /**
  * Commercial records (clients, projects) are readable by every member of the workspace,
  * but only its owner and admins write them: they carry billing terms and personal

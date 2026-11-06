@@ -86,6 +86,11 @@ docs/                architecture/overview.md, decisions/
   `paymentAmount`/`insuranceAmount`, dates), owned through its property and **never**
   fed into `computePropertyTotals`: financing is the cost of owning, not operating
   cashflow. A missing balance reads unknown, never zero.
+- `CostEntry` is one canonical cost: signed `Decimal(18,2)`, currency, actuality,
+  source identifiers (never a token), inclusive `periodStart`..`periodEnd`, optional
+  dimensions and a `DRAFT`/`FINALIZED` status. `CostAllocation` is a child row that
+  splits it across dimensions; the unallocated remainder is derived. Allocated +
+  unallocated equals the total in cents; finalized entries reject every write.
 - `IntegrationConnection.credentialsCiphertext` holds the AES-256-GCM token; it is
   never returned to the browser.
 - `Client` / `Project` (micro-business, workspace-scoped) carry an explicit
@@ -230,6 +235,13 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
   (`ACTIVE`/`COMPLETED`), its own currency and optional start/end dates; a billable model
   requires a client. Create/edit via `?editClient=` / `?editProject=`, archive/restore
   with one click. Only `OWNER`/`ADMIN` write; every member reads.
+- AI costs (`src/modules/ai-costs`): canonical `CostEntry` (signed exact amount,
+  currency, mandatory actuality, immutable source reference, inclusive period, optional
+  dimensions) and `CostAllocation` splits across project/client/repository/developer/
+  agent/issue/PR/environment/tag dimensions. Allocated plus derived unallocated always
+  equals the entry total in cents; weighted splits use largest remainder; a finalized
+  entry and its allocations are immutable (corrections are new entries). Workspace-
+  scoped; no UI, import, provider sync, exchange rate or profitability math yet.
 - Integrations: read-only GitHub (projects, open issues + PRs, explorer with
   combinable filters validated against present data, an actionable work queue —
   unanswered, old PRs, no milestone/label, blocked, milestones due — computed from

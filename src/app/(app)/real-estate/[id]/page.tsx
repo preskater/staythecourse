@@ -18,7 +18,12 @@ import { formatDateOnly, toDateOnlyString } from "@/lib/dates";
 import { formatMoney, type Currency } from "@/lib/money";
 import type Decimal from "decimal.js";
 import type { PropertyOccupancy } from "@/modules/real-estate/domain";
-import { getPropertyDetail } from "@/modules/real-estate/repository";
+import { toPropertyEventFormValues } from "@/modules/real-estate/events";
+import {
+  findPropertyEvent,
+  getPropertyDetail,
+  listPropertyEvents,
+} from "@/modules/real-estate/repository";
 import {
   availableKpiYears,
   computePropertyKpis,
@@ -38,6 +43,7 @@ import { PropertyForm, type PropertyFormValues } from "../property-form";
 import { SaleForm, type SaleFormValues } from "../sale-form";
 import { RemovePropertyButton } from "../remove-property-button";
 import { ValuationForm } from "../valuation-form";
+import { PropertyEventsSection } from "../events-section";
 
 export const dynamic = "force-dynamic";
 
@@ -137,6 +143,15 @@ export default async function PropertyDetailPage({
   if (!property) {
     notFound();
   }
+
+  const editEventId = typeof query.editEvent === "string" ? query.editEvent : null;
+  const [propertyEvents, requestedEvent] = await Promise.all([
+    listPropertyEvents(user.workspace.id, { propertyId: property.id }),
+    editEventId ? findPropertyEvent(user.workspace.id, editEventId) : null,
+  ]);
+  // An event from another property is ignored rather than edited from this page.
+  const editingEvent =
+    requestedEvent && requestedEvent.propertyId === property.id ? requestedEvent : null;
 
   const analysis = property.analysis;
   const currency = property.priceCurrency;
@@ -627,6 +642,21 @@ export default async function PropertyDetailPage({
           </ul>
         )}
       </Card>
+
+      <PropertyEventsSection
+        title="Échéances et obligations"
+        properties={[
+          {
+            id: property.id,
+            name: property.name,
+            currency: property.priceCurrency,
+          },
+        ]}
+        events={propertyEvents}
+        today={now}
+        editEvent={editingEvent ? toPropertyEventFormValues(editingEvent) : null}
+        basePath={`/real-estate/${property.id}`}
+      />
 
       <Card
         title="Historique"

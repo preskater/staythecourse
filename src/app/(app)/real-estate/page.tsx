@@ -17,18 +17,31 @@ import { formatDateOnly, toDateOnlyString } from "@/lib/dates";
 import { formatMoney, type Currency } from "@/lib/money";
 import type Decimal from "decimal.js";
 import { listTransactions } from "@/modules/budget/repository";
-import { listLoans, listProperties, findLoan } from "@/modules/real-estate/repository";
+import {
+  listLoans,
+  listProperties,
+  findLoan,
+  findPropertyEvent,
+  listPropertyEvents,
+} from "@/modules/real-estate/repository";
 import {
   computeLoanTotals,
   toLoanFormInitialValues,
 } from "@/modules/real-estate/loans";
 import type { PropertyOccupancy } from "@/modules/real-estate/domain";
+import {
+  filterPropertyEvents,
+  PROPERTY_EVENT_STATUSES,
+  toPropertyEventFormValues,
+  type PropertyEventStatus,
+} from "@/modules/real-estate/events";
 import { computeSaleAnalysis } from "@/modules/real-estate/valuation";
 import { CashflowForm, type TransactionOption } from "./cashflow-form";
 import { PropertyForm } from "./property-form";
 import { LoanForm } from "./loan-form";
 import { DeleteLoanButton } from "./delete-loan-button";
 import { RemovePropertyButton } from "./remove-property-button";
+import { PropertyEventsSection } from "./events-section";
 
 export const dynamic = "force-dynamic";
 
@@ -64,13 +77,18 @@ export default async function RealEstatePage({
 }) {
   const params = await searchParams;
   const editLoanId = typeof params.editLoan === "string" ? params.editLoan : null;
+  const editEventId = typeof params.editEvent === "string" ? params.editEvent : null;
+  const requestedEventProperty =
+    typeof params.eventProperty === "string" ? params.eventProperty : "";
+  const requestedEventStatus =
+    typeof params.eventStatus === "string" ? params.eventStatus : "";
 
   const user = await requireUser();
   // A direct link explains the state instead of a 404, and reads nothing of the module.
   if (!hasModule(user.workspace, "real-estate")) {
     return <ModuleDisabled moduleKey="real-estate" workspace={user.workspace} />;
   }
-  const [properties, recentTransactions, loans] = await Promise.all([
+  const [properties, recentTransactions, loans, allEvents] = await Promise.all([
     listProperties(user.workspace.id),
     // A cashflow entry can be linked to an operation recorded in the budget, when the
     // budget module is active in this workspace.
@@ -78,11 +96,33 @@ export default async function RealEstatePage({
       ? listTransactions(user.workspace.id, { take: TRANSACTION_OPTION_LIMIT })
       : [],
     listLoans(user.workspace.id),
+    listPropertyEvents(user.workspace.id),
   ]);
 
-  // The edited loan is looked up owner-scoped: a foreign or unknown id falls back to
-  // the creation form rather than revealing anything.
-  const editingLoan = editLoanId ? await findLoan(user.workspace.id, editLoanId) : null;
+  // An unknown filter value falls back to "all": a hand-edited link must never fail
+  // the page or hide data silently.
+  const eventPropertyFilter = properties.some(
+    (property) => property.id === requestedEventProperty,
+  )
+    ? requestedEventProperty
+    : "";
+  const eventStatusFilter = PROPERTY_EVENT_STATUSES.includes(
+    requestedEventStatus as PropertyEventStatus,
+  )
+    ? (requestedEventStatus as PropertyEventStatus)
+    : "";
+
+  const events = filterPropertyEvents(allEvents, {
+    propertyId: eventPropertyFilter || null,
+    status: eventStatusFilter || null,
+  });
+
+  // The edited loan and event are looked up owner-scoped: a foreign or unknown id
+  // falls back to the creation form rather than revealing anything.
+  const [editingLoan, editingEvent] = await Promise.all([
+    editLoanId ? findLoan(user.workspace.id, editLoanId) : null,
+    editEventId ? findPropertyEvent(user.workspace.id, editEventId) : null,
+  ]);
 
   // Reduced to strings: the form is a client component and never receives a Decimal.
   const transactionOptions: TransactionOption[] = recentTransactions.map((transaction) => ({
@@ -99,6 +139,14 @@ export default async function RealEstatePage({
   const propertyOptions = properties.map((property) => ({
     id: property.id,
     name: property.name,
+  }));
+
+  // Events carry an informational amount, so the form defaults its currency to the
+  // property's own reference currency instead of assuming EUR.
+  const eventPropertyOptions = properties.map((property) => ({
+    id: property.id,
+    name: property.name,
+    currency: property.priceCurrency,
   }));
 
   const propertyNameById = new Map(properties.map((property) => [property.id, property.name]));
@@ -197,6 +245,16 @@ export default async function RealEstatePage({
           </details>
         </div>
       </Card>
+
+      <PropertyEventsSection
+        title="Échéances et obligations"
+        properties={eventPropertyOptions}
+        events={events}
+        today={new Date()}
+        editEvent={editingEvent ? toPropertyEventFormValues(editingEvent) : null}
+        filter={{ propertyId: eventPropertyFilter, status: eventStatusFilter }}
+        basePath="/real-estate"
+      />
 
       <Card
         title="Financement"

@@ -25,7 +25,8 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-const { getSessionUser, requireModule, requireUser } = await import("./guard");
+const { getSessionUser, requireApiAccess, requireModule, requirePermission, requireUser } =
+  await import("./guard");
 
 /** Fictitious owner only. */
 const owner = {
@@ -129,6 +130,16 @@ describe("getSessionUser", () => {
     listMembershipsMock.mockResolvedValue([]);
 
     expect(await getSessionUser()).toBeNull();
+  });
+
+  it("refuses a membership whose role does not grant even read access", async () => {
+    // Deny-by-default: a role added later without a preset cannot open private pages
+    // simply because the membership row exists.
+    authMock.mockResolvedValue(validSession);
+    listMembershipsMock.mockResolvedValue([{ ...personal, role: "AUDITOR" }]);
+
+    expect(await getSessionUser()).toBeNull();
+    expect(touchSessionMock).not.toHaveBeenCalled();
   });
 
   it("refuses a revoked session on the very next request", async () => {
@@ -243,18 +254,135 @@ describe("requireModule", () => {
   });
 
   it("returns the session user when the module is active in their workspace", async () => {
-    expect((await requireModule("budget")).workspace).toEqual(personal);
+    expect((await requireModule("budget", "write")).workspace).toEqual(personal);
   });
 
   it("answers 404 when the module is not active in their workspace", async () => {
     listMembershipsMock.mockResolvedValue([{ ...personal, modules: ["real-estate"] }]);
 
-    await expect(requireModule("budget")).rejects.toThrow("not-found");
+    await expect(requireModule("budget", "write")).rejects.toThrow("not-found");
   });
 
   it("still redirects an anonymous visitor before looking at modules", async () => {
     authMock.mockResolvedValue(null);
 
-    await expect(requireModule("budget")).rejects.toThrow("redirect:/login");
+    await expect(requireModule("budget", "write")).rejects.toThrow("redirect:/login");
+  });
+
+  it.each(["OWNER", "ADMIN", "MEMBER"])("lets a %s write", async (role) => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role }]);
+
+    await expect(requireModule("budget", "write")).resolves.toMatchObject({
+      workspace: { role },
+    });
+  });
+
+  it("refuses a viewer's forged write call with a 404 and writes nothing", async () => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role: "VIEWER" }]);
+
+    await expect(requireModule("budget", "write")).rejects.toThrow("not-found");
+  });
+
+  it("still lets a viewer read the module", async () => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role: "VIEWER" }]);
+
+    await expect(requireModule("budget", "read")).resolves.toMatchObject({
+      workspace: { role: "VIEWER" },
+    });
+  });
+});
+
+describe("requirePermission", () => {
+  beforeEach(() => {
+    authMock.mockReset().mockResolvedValue(validSession);
+    findActiveSessionMock.mockReset().mockResolvedValue(sessionRecord);
+    touchSessionMock.mockReset().mockResolvedValue(undefined);
+    findOwnerByIdMock.mockReset().mockResolvedValue(owner);
+    listMembershipsMock.mockReset().mockResolvedValue([personal]);
+  });
+
+  it.each(["OWNER", "ADMIN", "MEMBER"])("lets a %s write outside a module", async (role) => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role }]);
+
+    await expect(requirePermission("write")).resolves.toMatchObject({
+      workspace: { role },
+    });
+  });
+
+  it("refuses a viewer's forged write with a 404", async () => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role: "VIEWER" }]);
+
+    await expect(requirePermission("write")).rejects.toThrow("not-found");
+  });
+
+  it("reserves module settings to owners and admins", async () => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role: "ADMIN" }]);
+    await expect(requirePermission("manage-modules")).resolves.toBeTruthy();
+
+    listMembershipsMock.mockResolvedValue([{ ...personal, role: "MEMBER" }]);
+    await expect(requirePermission("manage-modules")).rejects.toThrow("not-found");
+  });
+
+  it("redirects an anonymous visitor before checking the role", async () => {
+    authMock.mockResolvedValue(null);
+
+    await expect(requirePermission("write")).rejects.toThrow("redirect:/login");
+  });
+});
+
+describe("requireApiAccess", () => {
+  beforeEach(() => {
+    authMock.mockReset().mockResolvedValue(validSession);
+    findActiveSessionMock.mockReset().mockResolvedValue(sessionRecord);
+    touchSessionMock.mockReset().mockResolvedValue(undefined);
+    findOwnerByIdMock.mockReset().mockResolvedValue(owner);
+    listMembershipsMock.mockReset().mockResolvedValue([personal]);
+  });
+
+  it("answers 401 JSON for an anonymous request", async () => {
+    authMock.mockResolvedValue(null);
+
+    const result = await requireApiAccess("export", "budget");
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(401);
+    expect(await (result as Response).json()).toEqual({ error: "authentication_required" });
+  });
+
+  it.each(["OWNER", "ADMIN", "MEMBER"])("lets a %s export", async (role) => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role }]);
+
+    const result = await requireApiAccess("export", "budget");
+
+    expect(result).toMatchObject({ workspace: { role } });
+  });
+
+  it("answers 403 JSON when a viewer requests an export", async () => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role: "VIEWER" }]);
+
+    const result = await requireApiAccess("export", "budget");
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(403);
+    expect((result as Response).headers.get("Cache-Control")).toBe("no-store");
+    expect(await (result as Response).json()).toEqual({ error: "forbidden" });
+  });
+
+  it("answers 403 JSON when a viewer exports alerts, which has no module gate", async () => {
+    listMembershipsMock.mockResolvedValue([{ ...personal, role: "VIEWER" }]);
+
+    const result = await requireApiAccess("export");
+
+    expect((result as Response).status).toBe(403);
+  });
+
+  it("answers 404 for a disabled module before disclosing a role refusal", async () => {
+    listMembershipsMock.mockResolvedValue([
+      { ...personal, role: "VIEWER", modules: ["real-estate"] },
+    ]);
+
+    const result = await requireApiAccess("export", "budget");
+
+    expect((result as Response).status).toBe(404);
   });
 });

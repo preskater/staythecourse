@@ -43,7 +43,7 @@ const MANAGER_MESSAGE =
 type ManagerGuard = { user: SessionUser } | { refusal: ActionResult };
 
 async function requireManager(): Promise<ManagerGuard> {
-  const user = await requireModule("micro-business");
+  const user = await requireModule("micro-business", "write");
 
   if (!canManageBusinessRecords(user.workspace.role)) {
     return { refusal: { status: "error", message: MANAGER_MESSAGE } };

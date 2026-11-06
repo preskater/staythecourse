@@ -114,7 +114,7 @@ describe("module and workspace resolution", () => {
   it("checks the module entitlement, not a client-supplied key", async () => {
     await createClientAction(clientPayload);
 
-    expect(requireModuleMock).toHaveBeenCalledWith("micro-business");
+    expect(requireModuleMock).toHaveBeenCalledWith("micro-business", "write");
   });
 
   it("writes into the session's workspace, ignoring a forged workspace id", async () => {
