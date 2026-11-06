@@ -49,6 +49,25 @@ enum CashflowKind {
   EXPENSE
 }
 
+/// How a project is billed. Stored as an explicit choice rather than free text so the
+/// revenue model (M10-02) can branch on it: an internal or non-billable project never
+/// expects an invoice, whatever its delivery.
+enum BillingModel {
+  FIXED_PRICE
+  TIME_AND_MATERIALS
+  RETAINER
+  INTERNAL
+  NON_BILLABLE
+}
+
+/// The lifecycle the owner decided for a project. Archiving is a separate, reversible
+/// stamp (`archivedAt`): a completed project stays visible, an archived one keeps every
+/// field it had.
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+}
+
 /// Recurring obligations of a property that are not financial transactions yet.
 enum PropertyEventKind {
   TAX
@@ -219,6 +238,8 @@ model Workspace {
   goalContributions    GoalContribution[]
   properties           Property[]
   connections          IntegrationConnection[]
+  clients              Client[]
+  projects             Project[]
   alerts               Alert[]
   alertRules           AlertRule[]
   auditEvents          AuditEvent[]
@@ -738,6 +759,64 @@ model PropertyCashflow {
   transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
   @@index([propertyId, dueDate])
+}
+
+/// A client of the micro-business workspace.
+///
+/// Archiving is a reversible stamp, never a deletion: archived clients disappear from
+/// the entry forms while their projects and their history stay readable. The name is
+/// unique per workspace, archived rows included, so two clients can never be confused.
+model Client {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  contactName String?
+  email       String?
+  notes       String?
+  /// Null while active; set by an archive and cleared by a restore.
+  archivedAt  DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projects  Project[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+/// A unit of commercial work for the micro-business workspace.
+///
+/// `billingModel` is explicit because it drives later behaviour: an internal or
+/// non-billable project produces no revenue, so no invoice will ever be expected for
+/// it (M10-02). `clientId` is optional — internal work has no client — and required by
+/// validation for a billable model. `currency` is the project's own reference
+/// currency: amounts are never converted between projects.
+model Project {
+  id           String        @id @default(cuid())
+  workspaceId  String
+  clientId     String?
+  name         String
+  billingModel BillingModel
+  status       ProjectStatus @default(ACTIVE)
+  /// Reference currency of the project; never mixed with another one.
+  currency     String        @default("EUR") @db.Char(3)
+  startDate    DateTime?     @db.Date
+  endDate      DateTime?     @db.Date
+  notes        String?
+  /// Null while active; set by an archive and cleared by a restore.
+  archivedAt   DateTime?     @db.Timestamptz(3)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// `SetNull` only matters for a client row removed by a future maintenance path:
+  /// archiving a client keeps its projects linked.
+  client    Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@index([workspaceId, clientId])
 }
 
 /// A dated obligation of a property: a tax, an insurance premium, a lease renewal,

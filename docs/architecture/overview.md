@@ -17,6 +17,7 @@ the pages that consume it.
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
+| `micro-business` | Clients and projects of a commercial workspace: billing model, status, reference currency, key dates, archive/restore. No revenue entry or invoice yet (M10-02). | `domain.ts`, `repository.ts` |
 | `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period) and their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions. Conservation is exact in cents; finalized entries are immutable. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `repository.ts` |
 | `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots. | `domain.ts`, `adapter.ts`, `github.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
@@ -171,6 +172,16 @@ asked for: a cascade here would silently change what a property is worth.
   neighbouring month. The end-of-month bound is exclusive.
 - **Currencies** are stored per row. A total is always computed per currency;
   mixing currencies raises an error instead of inventing an exchange rate.
+- **Clients and projects** belong to one workspace. A project's `billingModel` is an
+  explicit enum, never inferred: `billingBehaviour` marks `FIXED_PRICE`,
+  `TIME_AND_MATERIALS` and `RETAINER` as billable — they are where revenue will be
+  recognised — and `INTERNAL` and `NON_BILLABLE` as producing none. A billable project
+  requires a client; the other two may go without one. `currency` is the project's own
+  reference currency and is never converted. `status` (`ACTIVE`/`COMPLETED`) is the
+  owner's decision, while `archivedAt` is a separate reversible stamp: archiving writes
+  no other column, so an archived client or project keeps its details, its dates and its
+  links, and restoring only clears the stamp. Names are unique per workspace, archived
+  rows included. Only `OWNER` and `ADMIN` write these records; every member reads them.
 - **Cost ledger primitives** live in `src/modules/ai-costs` and follow the same money
   rules. A provider export may carry more than two decimals; it is rounded **half-up
   to the cent** exactly once, at the boundary (`roundToCents`), and the original
@@ -1318,5 +1329,8 @@ age is not restorability: that verification is SO-04.
   UI, no import, no provider synchronisation, no exchange-rate conversion and no
   profitability calculation yet. Finalization is per entry, not a separate
   period-closing record: every entry of a period must be finalized to close it.
+- The `micro-business` module ships clients and projects only: no revenue entry,
+  invoice, credit note, payment, rate card or business expense exists yet (M10-02 and
+  later). No client or project is deleted, only archived.
 - The integrations page triggers a synchronisation on demand; no scheduler entry
   point (cron unit, platform job) ships with the repository yet.

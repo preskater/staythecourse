@@ -435,7 +435,7 @@ export async function deleteLoanAction(values: unknown): Promise<ActionResult> {
  */
 
 export async function createPropertyEventAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = propertyEventInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -464,7 +464,7 @@ export async function createPropertyEventAction(values: unknown): Promise<Action
 }
 
 export async function updatePropertyEventAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = propertyEventUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -502,7 +502,7 @@ export async function updatePropertyEventAction(values: unknown): Promise<Action
 }
 
 export async function deletePropertyEventAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("real-estate");
+  const user = await requireModule("real-estate", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {

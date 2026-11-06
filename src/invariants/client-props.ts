@@ -73,6 +73,9 @@ export type ClientModules = {
   "src/app/(app)/budget/transfer-form.tsx": typeof import("@/app/(app)/budget/transfer-form");
   "src/app/(app)/budget/work-calendar.tsx": typeof import("@/app/(app)/budget/work-calendar");
   "src/app/(app)/integrations/issue-filters-form.tsx": typeof import("@/app/(app)/integrations/issue-filters-form");
+  "src/app/(app)/micro-business/archive-toggle.tsx": typeof import("@/app/(app)/micro-business/archive-toggle");
+  "src/app/(app)/micro-business/client-form.tsx": typeof import("@/app/(app)/micro-business/client-form");
+  "src/app/(app)/micro-business/project-form.tsx": typeof import("@/app/(app)/micro-business/project-form");
   "src/app/(app)/modules/module-toggle.tsx": typeof import("@/app/(app)/modules/module-toggle");
   "src/app/(app)/real-estate/cashflow-form.tsx": typeof import("@/app/(app)/real-estate/cashflow-form");
   "src/app/(app)/real-estate/delete-event-button.tsx": typeof import("@/app/(app)/real-estate/delete-event-button");

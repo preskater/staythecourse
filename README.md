@@ -134,6 +134,15 @@ Working today:
   computed says why (no acquisition price, incomplete year, another currency, missing
   loan payment) instead of showing a zero, and a window without any cashflow prints no
   figures at all.
+- Micro-business (`/micro-business`, module key `micro-business`): clients and projects,
+  both archived rather than deleted — archiving writes only a reversible stamp, so every
+  field, date and client link survives and restoring clears it. A project carries an
+  explicit billing model (`FIXED_PRICE`, `TIME_AND_MATERIALS`, `RETAINER`, `INTERNAL`,
+  `NON_BILLABLE`), a status, its own reference currency and optional start/end dates; a
+  billable model requires a client, and `INTERNAL`/`NON_BILLABLE` are shown as producing
+  no revenue. Create/edit through `?editClient=` / `?editProject=`. Only `OWNER` and
+  `ADMIN` write; every member of the workspace reads. No revenue entry or invoice exists
+  yet (M10-02).
 - Property events (real-estate, « Échéances et obligations »): taxes, insurance,
   maintenance, leases, inspections, loan deadlines and renovation tracked as dated
   reminders — kind, optional calendar date, status (planned, done, cancelled), notes and

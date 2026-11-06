@@ -26,6 +26,7 @@ const PAGES: { path: string; moduleKey: ModuleKey; load: () => Promise<{ default
   { path: "/budget/import", moduleKey: "budget", load: () => import("./budget/import/page") },
   { path: "/real-estate", moduleKey: "real-estate", load: () => import("./real-estate/page") },
   { path: "/real-estate/[id]", moduleKey: "real-estate", load: () => import("./real-estate/[id]/page") },
+  { path: "/micro-business", moduleKey: "micro-business", load: () => import("./micro-business/page") },
   { path: "/integrations", moduleKey: "development", load: () => import("./integrations/page") },
 ];
 
@@ -41,19 +42,25 @@ describe("direct access to a disabled module", () => {
     });
   });
 
-  it.each(PAGES)("$path renders the disabled state and reads nothing", async ({ moduleKey, load }) => {
-    // Every other module stays active: only the page's own module decides.
-    requireUserMock.mockResolvedValue(
-      sessionWith((["budget", "real-estate", "development"] as const).filter((key) => key !== moduleKey)),
-    );
-    const { default: Page } = await load();
+  it.each(PAGES)(
+    "$path renders the disabled state and reads nothing",
+    async ({ moduleKey, load }) => {
+      // Every other module stays active: only the page's own module decides.
+      requireUserMock.mockResolvedValue(
+        sessionWith((["budget", "real-estate", "development"] as const).filter((key) => key !== moduleKey)),
+      );
+      const { default: Page } = await load();
 
-    const element = (await Page(props)) as { type: unknown; props: { moduleKey: ModuleKey } };
+      const element = (await Page(props)) as { type: unknown; props: { moduleKey: ModuleKey } };
 
-    expect(element.type).toBe(ModuleDisabled);
-    expect(element.props.moduleKey).toBe(moduleKey);
-    expect(readMock).not.toHaveBeenCalled();
-  }, 20_000);
+      expect(element.type).toBe(ModuleDisabled);
+      expect(element.props.moduleKey).toBe(moduleKey);
+      expect(readMock).not.toHaveBeenCalled();
+    },
+    // The first dynamic import compiles the page's whole graph: on a cold or slow
+    // filesystem that can exceed Vitest's 5 s default.
+    20_000,
+  );
 });
 
 describe("ModuleDisabled", () => {

@@ -26,12 +26,12 @@ read-only; personal and company data are not mixed.
 
 ```text
 src/
-  app/(app)/         authenticated pages: account, alerts, budget (incl. /budget/import), dashboard, integrations, real-estate
+  app/(app)/         authenticated pages: account, alerts, budget (incl. /budget/import), dashboard, integrations, micro-business, real-estate
   app/api/           Route Handlers: auth callbacks + CSV export (401 JSON, never a redirect)
   app/login/         sign-in page
   components/        shared UI (forms, server-rendered SVG charts, navigation)
   modules/           business rules per module: identity, budget, real-estate,
-                     integrations, alerts, dashboard, audit, catalog
+                     micro-business, integrations, alerts, dashboard, audit, catalog
                      (domain.ts / repository.ts inside each)
   lib/               db, env, money, dates, csv, crypto, auth helpers
   jobs/sync.ts       idempotent synchronisation functions (no scheduler shipped)
@@ -45,7 +45,7 @@ docs/                architecture/overview.md, decisions/
 
 `User` (sole owner) owns `Account`, `Category`, `Transaction`, `Budget`,
 `RecurringEntry`, `Goal`, `SalarySetting`, `SalaryRate`, `WorkDay`, `Property`,
-`IntegrationConnection`, `Alert`, `AlertRule`. Key rules:
+`Client`, `Project`, `IntegrationConnection`, `Alert`, `AlertRule`. Key rules:
 
 - `Transaction.amount` is `Decimal(18, 2)`, signed (negative = outflow); never floats.
 - `Transaction.operationDate` is `DATE`; instants are `timestamptz(3)` UTC.
@@ -93,6 +93,12 @@ docs/                architecture/overview.md, decisions/
   unallocated equals the total in cents; finalized entries reject every write.
 - `IntegrationConnection.credentialsCiphertext` holds the AES-256-GCM token; it is
   never returned to the browser.
+- `Client` / `Project` (micro-business, workspace-scoped) carry an explicit
+  `billingModel` enum; `billingBehaviour` marks `FIXED_PRICE`,
+  `TIME_AND_MATERIALS` and `RETAINER` as billable and `INTERNAL` / `NON_BILLABLE` as
+  producing no revenue. A billable project requires a client. `archivedAt` is a
+  reversible stamp: archiving writes no other column, so an archived record keeps
+  everything, and names stay unique per workspace (archived rows included).
 - `ProjectSnapshot` / `IssueSnapshot` / `MilestoneSnapshot` are keyed by
   `(connectionId, externalId)` — that is what makes a sync re-runnable.
 
@@ -223,6 +229,12 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
   (amount XOR transaction link), totals, due dates, notes. Loans (financing): create,
   edit (`?editLoan=`) and delete with a confirmation, totalled per currency and shown
   apart from the operating figures — financing never counts in the property totals.
+- Micro-business (`/micro-business`, module key `micro-business`): clients and projects,
+  both archived rather than deleted. A project carries an explicit billing model
+  (`FIXED_PRICE`, `TIME_AND_MATERIALS`, `RETAINER`, `INTERNAL`, `NON_BILLABLE`), a status
+  (`ACTIVE`/`COMPLETED`), its own currency and optional start/end dates; a billable model
+  requires a client. Create/edit via `?editClient=` / `?editProject=`, archive/restore
+  with one click. Only `OWNER`/`ADMIN` write; every member reads.
 - AI costs (`src/modules/ai-costs`): canonical `CostEntry` (signed exact amount,
   currency, mandatory actuality, immutable source reference, inclusive period, optional
   dimensions) and `CostAllocation` splits across project/client/repository/developer/
@@ -259,6 +271,8 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
 ## Not implemented (do not assume they exist)
 
 - No scheduler/cron for sync — the function exists, only the manual trigger ships.
+- The `micro-business` module has clients and projects only: no revenue entry, invoice,
+  credit note, payment, rate card or business expense yet (M10-02 and later).
 - Properties and cashflow entries cannot be edited or deleted from the interface yet.
   Loans (financing), accounts (rename/retype/archive/restore), categories
   (rename/merge/delete) and recurring series (edit) are managed in the interface
