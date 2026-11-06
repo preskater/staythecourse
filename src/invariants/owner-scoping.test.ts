@@ -168,6 +168,20 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       "fixture",
       { amount: new Decimal("1.00"), dimensions: { projectId: "fixture" } },
     ],
+    recordExchangeRate: [
+      {
+        workspaceId: OWNER,
+        baseCurrency: "USD",
+        quoteCurrency: "EUR",
+        rate: new Decimal("0.9234567891"),
+        rateDate: date,
+        source: { kind: "manual", enteredBy: "fixture", capturedAt: date },
+      },
+    ],
+    findExchangeRateSnapshot: [
+      OWNER,
+      { baseCurrency: "USD", quoteCurrency: "EUR", asOf: date },
+    ],
   };
   if (special[name]) return special[name];
   return /^async function \w+\(\s*input\b/.test(fn.toString())

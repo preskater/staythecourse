@@ -243,6 +243,7 @@ model Workspace {
   alerts               Alert[]
   alertRules           AlertRule[]
   auditEvents          AuditEvent[]
+  exchangeRates        ExchangeRateSnapshot[]
   costEntries          CostEntry[]
 }
 
@@ -1265,4 +1266,39 @@ model AuditEvent {
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, action, createdAt])
+}
+
+/// One frozen exchange rate, used to normalise a cost into the workspace's currency
+/// (M9-04).
+///
+/// A snapshot is never edited and never deleted: it is the evidence behind a converted
+/// figure, and a converted amount references the snapshot it used. Recording a newer
+/// rate therefore only affects conversions made afterwards — no value already computed
+/// is rewritten.
+///
+/// `baseCurrency`/`quoteCurrency` read "1 base is worth `rate` quote"; the reverse pair
+/// is recorded explicitly, never derived from an inverse. `rateDate` is the calendar day
+/// the rate is in force for (a rate applies to conversions dated on or after it, until a
+/// newer one exists), `recordedAt` is the instant the row was written and only breaks a
+/// tie between two snapshots of the same day. The rate is an exact decimal with ten
+/// places; nothing is rounded on the way in.
+///
+/// `source` holds the frozen source reference of the ledger (kind and identifiers only,
+/// plus the capture instant), re-validated through `createCostSource` on read. A missing
+/// rate reads "unknown": an amount is never converted with a guessed or implicit rate.
+model ExchangeRateSnapshot {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  baseCurrency  String   @db.Char(3)
+  quoteCurrency String   @db.Char(3)
+  /// 1 unit of `baseCurrency` is worth `rate` units of `quoteCurrency`.
+  rate          Decimal  @db.Decimal(18, 10)
+  rateDate      DateTime @db.Date
+  /// Frozen `CostSourceReference`: kind, identifiers and capture instant only.
+  source        Json
+  recordedAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, baseCurrency, quoteCurrency, rateDate], map: "ExchangeRateSnapshot_workspace_pair_rateDate_idx")
 }

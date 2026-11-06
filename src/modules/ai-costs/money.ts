@@ -24,7 +24,14 @@ export class InvalidCostMoneyError extends Error {
 
 const DECIMAL_STRING_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
-function toDecimal(value: Decimal.Value): Decimal {
+/**
+ * Parses an exact decimal without rounding anything.
+ *
+ * Shared by the cost ledger's money and its exchange rates, which have different
+ * precisions: the caller decides how many decimals it accepts and which error to
+ * raise, so a value is never silently rounded on the way in.
+ */
+export function toExactDecimal(value: Decimal.Value): Decimal {
   if (value === null || value === undefined) {
     throw new InvalidCostMoneyError("an amount is required");
   }
@@ -63,7 +70,7 @@ function toDecimal(value: Decimal.Value): Decimal {
  * an import produces the amount.
  */
 export function roundToCents(value: Decimal.Value): Decimal {
-  return toDecimal(value).toDecimalPlaces(
+  return toExactDecimal(value).toDecimalPlaces(
     AMOUNT_DECIMALS,
     Decimal.ROUND_HALF_UP,
   );

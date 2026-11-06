@@ -18,7 +18,7 @@ the pages that consume it.
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
 | `micro-business` | Clients and projects of a commercial workspace: billing model, status, reference currency, key dates, archive/restore. No revenue entry or invoice yet (M10-02). | `domain.ts`, `repository.ts` |
-| `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period) and their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions. Conservation is exact in cents; finalized entries are immutable. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `repository.ts` |
+| `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period), their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions, and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). Conservation is exact in cents; finalized entries are immutable. No provider call yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `exchange.ts`, `repository.ts` |
 | `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots. | `domain.ts`, `adapter.ts`, `github.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
@@ -208,6 +208,23 @@ asked for: a cascade here would silently change what a property is worth.
   and its allocations in one transaction (`SELECT ... FOR UPDATE`); later writes are
   refused and a correction is a new entry. `CostAllocation` is a child table: it has no
   `workspaceId` and is reachable only through its workspace-scoped entry.
+- **Exchange rates** are stored as **snapshots** (`ExchangeRateSnapshot`), never as a
+  mutable setting. A snapshot is one pair (`baseCurrency`/`quoteCurrency` read "1 base is
+  worth `rate` quote"), an exact rate with ten decimals, the calendar day it is in force
+  for (`rateDate`), the instant it was written (`recordedAt`) and the ledger's frozen
+  source reference. The rate is never rounded on the way in; the converted amount is
+  rounded **half-up to the cent** once, by `costMoney` (M9-01), and the original amount
+  and currency are always kept beside it. A converted figure carries the snapshot it
+  used (`Conversion.snapshot.id`), so recording a newer rate — a correction, or a rate
+  observed later the same day — only affects conversions made afterwards; nothing
+  already computed is rewritten. A lookup takes the latest snapshot of the pair dated on
+  or before the amount's day, ties broken by `recordedAt` then identifier; a day before
+  the first snapshot has **no** rate and the amount stays unknown, never converted with a
+  guessed, implicit or reversed rate (the opposite pair is recorded explicitly, because
+  an exact inverse is a repeating decimal). Rates enter through `recordExchangeRate`
+  (manual entry today, CSV import when M9-05 lands) — there is no live rate feed, and no
+  rate is ever inferred. Snapshots are workspace-scoped and are never updated or deleted
+  in code.
 - **Imports** are made re-runnable by a unique constraint on
   `(accountId, externalRef)`: replaying an import fails loudly instead of
   duplicating a line. The manual CSV import (page « Importer un CSV », see below) uses
