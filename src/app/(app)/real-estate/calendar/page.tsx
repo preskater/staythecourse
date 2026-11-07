@@ -1,11 +1,5 @@
 import Link from "next/link";
-import {
-  Card,
-  Notice,
-  PageHeader,
-  inputClass,
-  submitClass,
-} from "@/components/ui";
+import { Card, PageHeader, inputClass, submitClass } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { ModuleDisabled } from "@/components/module-disabled";
 import { hasModule } from "@/modules/catalog/catalog";
@@ -37,6 +31,15 @@ import { CalendarEntryList, CalendarMonthGrid } from "./calendar-view";
 export const dynamic = "force-dynamic";
 
 type CalendarView = "month" | "list";
+
+const FOCUS_RING =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500";
+
+/** One button shape for every action of the page, so secondary ones never look like links. */
+const SECONDARY_BUTTON = `inline-flex items-center justify-center rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800 ${FOCUS_RING}`;
+const PRIMARY_BUTTON = `${submitClass} ${FOCUS_RING}`;
+const FILTER_LABEL_CLASS =
+  "flex w-full flex-col gap-1 text-xs font-medium text-zinc-600 sm:w-52 dark:text-zinc-300";
 
 /** `isValidMonthKey` accepts the format; the calendar also needs a year `monthRange` can read. */
 function isSupportedMonthKey(value: string | null | undefined): value is string {
@@ -151,170 +154,172 @@ export default async function PropertyCalendarPage({
   });
   const listEntries = sortCalendarEntries(entries);
 
+  const filters = { property: propertyFilter, status: statusFilter };
   const viewHref = (view: CalendarView) =>
-    calendarHref({
-      view,
-      month: monthKey,
-      property: propertyFilter,
-      status: statusFilter,
-    });
+    calendarHref({ view, month: monthKey, ...filters });
   const monthHref = (targetMonth: string) =>
-    calendarHref({
-      view: "month",
-      month: targetMonth,
-      property: propertyFilter,
-      status: statusFilter,
-    });
+    calendarHref({ view: "month", month: targetMonth, ...filters });
   const resetHref = calendarHref({
     view: requestedView,
     month: monthKey,
   });
 
   const hasFilters = Boolean(propertyFilter || statusFilter);
+  const undatedCount = listEntries.filter((entry) => entry.dueDate === null).length;
   const emptyDescription = hasFilters
     ? "Aucune échéance ne correspond à ces filtres. Modifiez le bien ou le statut, ou réinitialisez le filtre."
     : "Aucune échéance n'est enregistrée. Ajoutez une échéance depuis la page Immobilier pour la voir apparaître ici.";
-
-  const viewLinkClass = (view: CalendarView) =>
-    view === requestedView
-      ? "rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-      : "rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800";
 
   return (
     <>
       <PageHeader
         title="Calendrier immobilier"
-        description="Échéances des biens et dates des flux, en vue mensuelle ou en liste. Chaque entrée renvoie à son bien."
+        description="Échéances des biens et dates des flux, en vue mensuelle ou en liste."
         actions={
-          <Link
-            href="/real-estate"
-            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
+          <Link href="/real-estate" className={SECONDARY_BUTTON}>
             ← Tous les biens
           </Link>
         }
       />
 
-      <Card
-        title="Filtres"
-        description="Filtrez par bien et par statut. Les échéances et les flux partagent la même grille de lecture."
-      >
-        <form
-          method="get"
-          action="/real-estate/calendar"
-          className="flex flex-wrap items-end gap-3 text-sm"
-        >
-          <input type="hidden" name="view" value={requestedView} />
-          <input type="hidden" name="month" value={monthKey} />
+      <Card>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <nav
+            aria-label="Vue du calendrier"
+            className="inline-flex self-center rounded-md border border-zinc-300 p-0.5 dark:border-zinc-700"
+          >
+            {(["month", "list"] as const).map((view) => (
+              <Link
+                key={view}
+                href={viewHref(view)}
+                aria-current={requestedView === view ? "page" : undefined}
+                className={`rounded px-3 py-1 text-sm ${FOCUS_RING} ${
+                  requestedView === view
+                    ? "bg-zinc-900 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                }`}
+              >
+                {view === "month" ? "Mois" : "Liste"}
+              </Link>
+            ))}
+          </nav>
 
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">Bien</span>
-            <select name="property" defaultValue={propertyFilter} className={inputClass}>
-              <option value="">Tous les biens</option>
-              {properties.map((property) => (
-                <option key={property.id} value={property.id}>
-                  {property.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {requestedView === "month" ? (
+            <div className="flex w-full items-center justify-between gap-1 sm:w-auto sm:justify-start">
+              {previousMonth ? (
+                <Link
+                  href={monthHref(previousMonth)}
+                  aria-label="Mois précédent"
+                  title="Mois précédent"
+                  className={`${SECONDARY_BUTTON} px-2`}
+                >
+                  ‹
+                </Link>
+              ) : null}
+              <span className="whitespace-nowrap px-1 text-center text-sm font-semibold capitalize sm:min-w-36">
+                {formatMonthLabel(year, month)}
+              </span>
+              {nextMonth ? (
+                <Link
+                  href={monthHref(nextMonth)}
+                  aria-label="Mois suivant"
+                  title="Mois suivant"
+                  className={`${SECONDARY_BUTTON} px-2`}
+                >
+                  ›
+                </Link>
+              ) : null}
+              {monthKey !== currentMonth ? (
+                <Link
+                  href={monthHref(currentMonth)}
+                  aria-label="Revenir au mois courant"
+                  title="Revenir au mois courant"
+                  className={`${SECONDARY_BUTTON} ml-1`}
+                >
+                  <span className="sm:hidden">Auj.</span>
+                  <span className="hidden sm:inline">Aujourd&apos;hui</span>
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
 
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">Statut</span>
-            <select name="status" defaultValue={statusFilter} className={inputClass}>
-              <option value="">Tous les statuts</option>
-              {CALENDAR_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {CALENDAR_STATUS_LABELS[status]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <form
+            method="get"
+            action="/real-estate/calendar"
+            className="flex w-full flex-wrap items-center gap-2 border-t border-zinc-200 pt-3 sm:w-auto sm:border-0 sm:pt-0 dark:border-zinc-800"
+          >
+            <input type="hidden" name="view" value={requestedView} />
+            <input type="hidden" name="month" value={monthKey} />
 
-          <button type="submit" className={submitClass}>
-            Filtrer
-          </button>
-          <Link href={resetHref} className="text-sm underline">
-            Réinitialiser
-          </Link>
-        </form>
+            <label className={FILTER_LABEL_CLASS}>
+              <span>Bien</span>
+              <select name="property" defaultValue={propertyFilter} className={inputClass}>
+                <option value="">Tous les biens</option>
+                {properties.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className={`${FILTER_LABEL_CLASS} sm:w-40`}>
+              <span>Statut</span>
+              <select name="status" defaultValue={statusFilter} className={inputClass}>
+                <option value="">Tous les statuts</option>
+                {CALENDAR_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {CALENDAR_STATUS_LABELS[status]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex w-full gap-2 sm:w-auto">
+              <button type="submit" className={PRIMARY_BUTTON}>
+                Filtrer
+              </button>
+              {hasFilters ? (
+                <Link href={resetHref} className={SECONDARY_BUTTON}>
+                  Réinitialiser
+                </Link>
+              ) : null}
+            </div>
+          </form>
+
+          {requestedView === "list" ? (
+            <p className="text-xs text-zinc-500 sm:ml-auto sm:pb-2 dark:text-zinc-400">
+              {listEntries.length} entrée(s)
+              {undatedCount > 0 ? `, dont ${undatedCount} sans date` : ""}
+            </p>
+          ) : null}
+        </div>
       </Card>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <nav aria-label="Vue du calendrier" className="flex flex-wrap gap-1">
-          <Link
-            href={viewHref("month")}
-            aria-current={requestedView === "month" ? "page" : undefined}
-            className={viewLinkClass("month")}
-          >
-            Mois
-          </Link>
-          <Link
-            href={viewHref("list")}
-            aria-current={requestedView === "list" ? "page" : undefined}
-            className={viewLinkClass("list")}
-          >
-            Liste
-          </Link>
-        </nav>
-
-        {requestedView === "month" ? (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            {previousMonth ? (
-              <Link
-                href={monthHref(previousMonth)}
-                className="rounded-md border border-zinc-300 px-2 py-1 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                ← Précédent
-              </Link>
-            ) : null}
-            <span className="font-medium">{formatMonthLabel(year, month)}</span>
-            {nextMonth ? (
-              <Link
-                href={monthHref(nextMonth)}
-                className="rounded-md border border-zinc-300 px-2 py-1 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                Suivant →
-              </Link>
-            ) : null}
-            {monthKey !== currentMonth ? (
-              <Link href={monthHref(currentMonth)} className="underline">
-                Ce mois-ci
-              </Link>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-        Les dates sont des jours civils lus en UTC : le fuseau du navigateur ne déplace
-        jamais une échéance d&apos;un jour ou d&apos;un mois. Une entrée sans date
-        n&apos;est jamais placée dans un mois : elle apparaît uniquement en vue liste.
-      </p>
-
       {requestedView === "month" ? (
-        <Card
-          title="Vue mensuelle"
-          description="La grille donne le rythme du mois ; le détail sous la grille reste lisible sur un téléphone."
-        >
+        <Card>
           <div className="flex flex-col gap-4">
             <CalendarMonthGrid month={monthData} />
 
-            {monthData.undatedCount > 0 ? (
-              <Notice tone="info">
-                {monthData.undatedCount} entrée(s) sans date, visible(s) uniquement en
-                vue liste.{" "}
-                <Link href={viewHref("list")} className="underline">
-                  Voir la liste complète
-                </Link>
-                .
-              </Notice>
-            ) : null}
-
-            <div className="flex flex-col gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Détail du mois
-              </h2>
+            <div className="flex flex-col gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h2 className="text-sm font-semibold">Détail du mois</h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {monthData.entries.length} entrée(s)
+                  {monthData.undatedCount > 0 ? (
+                    <>
+                      {" · "}
+                      {monthData.undatedCount} sans date, en{" "}
+                      <Link
+                        href={viewHref("list")}
+                        className={`rounded underline underline-offset-2 ${FOCUS_RING}`}
+                      >
+                        vue liste
+                      </Link>
+                    </>
+                  ) : null}
+                </p>
+              </div>
               <CalendarEntryList
                 entries={monthData.entries}
                 emptyTitle="Aucune échéance ce mois-ci"
@@ -324,10 +329,7 @@ export default async function PropertyCalendarPage({
           </div>
         </Card>
       ) : (
-        <Card
-          title="Toutes les échéances"
-          description="Les entrées datées sont classées chronologiquement ; celles sans date sont regroupées en fin de liste."
-        >
+        <Card>
           <CalendarEntryList
             entries={listEntries}
             emptyTitle="Aucune échéance à afficher"
@@ -335,6 +337,12 @@ export default async function PropertyCalendarPage({
           />
         </Card>
       )}
+
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        Jours civils groupés en UTC : le fuseau du navigateur ne déplace jamais une
+        entrée d&apos;un jour ou d&apos;un mois, et une entrée sans date reste hors du
+        calendrier.
+      </p>
     </>
   );
 }
