@@ -160,6 +160,12 @@ Working today:
   ever invented. The list filters by property and status, and create/edit/delete run
   through owner-scoped Server Actions. Saving an event never creates a transaction, and
   its amount is labelled « indicatif »: it never enters the property totals.
+- Property calendar (`/real-estate/calendar`): the property events and the cashflow due
+  dates in one view — a Monday-first month grid or a chronological list, filterable by
+  property and status, with every entry linking to its property page. An entry without a
+  date is never placed in a month: it appears in the list under « sans date ». Dates are
+  calendar days (`DATE`) grouped in UTC, so the reader's time zone never moves an entry
+  into another day or month; locale and time zone only affect how a heading is displayed.
 - GitHub / GitLab connections: read-only adapters, encrypted tokens, manual
   synchronisation, project snapshots, and a small GitHub: open issues and pull
   requests counted per repository, an explorer with combinable filters (repository,

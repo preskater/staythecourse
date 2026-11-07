@@ -12,6 +12,7 @@ import {
 } from "./domain";
 import type { LoanSummary } from "./loans";
 import type { DueCashflow } from "./alerts";
+import type { CalendarCashflow } from "./calendar";
 import type {
   PropertyEvent,
   PropertyEventFilter,
@@ -224,6 +225,17 @@ export async function listProperties(
   return rows.map((row) =>
     toPropertySummary(row, row.cashflows.map(toCashflowDetail)),
   );
+}
+
+/** Property options for a filter or a select, without loading totals or history. */
+export async function listPropertyOptions(
+  workspaceId: string,
+): Promise<{ id: string; name: string }[]> {
+  return getPrisma().property.findMany({
+    where: { workspaceId },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
 }
 
 /** One property with its full history and its sale analysis. */
@@ -797,6 +809,40 @@ export async function listPropertyEvents(
   });
 
   return rows.map(toPropertyEvent);
+}
+
+/**
+ * Cashflow due dates of the workspace, for the property calendar.
+ *
+ * Undated entries are kept: the list view shows them under « sans date » instead of
+ * dropping them. Only the fields the calendar places and labels cross this boundary;
+ * amounts and notes stay on the property page.
+ */
+export async function listCalendarCashflows(
+  workspaceId: string,
+): Promise<CalendarCashflow[]> {
+  const rows = await getPrisma().propertyCashflow.findMany({
+    where: { property: { workspaceId } },
+    orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      kind: true,
+      label: true,
+      dueDate: true,
+      settledAt: true,
+      property: { select: { id: true, name: true } },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    propertyId: row.property.id,
+    propertyName: row.property.name,
+    kind: row.kind as CashflowKind,
+    label: row.label,
+    dueDate: row.dueDate,
+    settledAt: row.settledAt,
+  }));
 }
 
 /** Owner-scoped event lookup: an identifier from a URL or a form is never trusted. */
