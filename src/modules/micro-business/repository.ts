@@ -8,6 +8,7 @@ import type {
   ProjectSummary,
 } from "./domain";
 import type { RevenueDocumentKind, RevenueDocumentRecord } from "./revenue";
+import type { BillingRateRecord, InternalCostRateRecord } from "./rates";
 
 /**
  * Micro-business persistence. Every query is scoped to the workspace resolved from the
@@ -523,4 +524,184 @@ export async function createRevenueMovement(
         select: { id: true },
       });
   }
+}
+
+/**
+ * Rate persistence (M10-03).
+ *
+ * Both tables are change points keyed by month. Saving an existing month corrects it
+ * (upsert); nothing is deleted, so a period never loses the rate that was in force.
+ * The internal rows are only ever read through a permission check in the page and the
+ * action; this module itself has no notion of the caller's role.
+ */
+
+const BILLING_RATE_SELECT = {
+  id: true,
+  clientId: true,
+  year: true,
+  month: true,
+  hourlyRate: true,
+  currency: true,
+  client: { select: { name: true } },
+} as const;
+
+type BillingRateRow = {
+  id: string;
+  clientId: string;
+  year: number;
+  month: number;
+  hourlyRate: Decimal;
+  currency: string;
+  client: { name: string };
+};
+
+const INTERNAL_COST_RATE_SELECT = {
+  id: true,
+  year: true,
+  month: true,
+  hourlyRate: true,
+  currency: true,
+} as const;
+
+type InternalCostRateRow = {
+  id: string;
+  year: number;
+  month: number;
+  hourlyRate: Decimal;
+  currency: string;
+};
+
+function toBillingRateRecord(row: BillingRateRow): BillingRateRecord {
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    clientName: row.client.name,
+    year: row.year,
+    month: row.month,
+    hourlyRate: new Decimal(row.hourlyRate.toString()),
+    currency: assertCurrency(row.currency),
+  };
+}
+
+function toInternalCostRateRecord(row: InternalCostRateRow): InternalCostRateRecord {
+  return {
+    id: row.id,
+    year: row.year,
+    month: row.month,
+    hourlyRate: new Decimal(row.hourlyRate.toString()),
+    currency: assertCurrency(row.currency),
+  };
+}
+
+/** Every billing change point of the workspace, client name then most recent first. */
+export async function listBillingRates(
+  workspaceId: string,
+): Promise<BillingRateRecord[]> {
+  const rows = await getPrisma().billingRate.findMany({
+    where: { workspaceId },
+    select: BILLING_RATE_SELECT,
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+  });
+
+  return rows
+    .map(toBillingRateRecord)
+    .sort(
+      (left, right) =>
+        left.clientName.localeCompare(right.clientName) ||
+        right.year - left.year ||
+        right.month - left.month,
+    );
+}
+
+/** Every internal cost change point of the workspace, most recent first. */
+export async function listInternalCostRates(
+  workspaceId: string,
+): Promise<InternalCostRateRecord[]> {
+  const rows = await getPrisma().internalCostRate.findMany({
+    where: { workspaceId },
+    select: INTERNAL_COST_RATE_SELECT,
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+  });
+
+  return rows.map(toInternalCostRateRecord);
+}
+
+export type BillingRateWriteInput = {
+  workspaceId: string;
+  clientId: string;
+  year: number;
+  month: number;
+  hourlyRate: Decimal;
+  currency: Currency;
+};
+
+/** Creates or corrects the client's change point for the month; `null` = foreign client. */
+export async function upsertBillingRate(
+  input: BillingRateWriteInput,
+): Promise<BillingRateRecord | null> {
+  const client = await getPrisma().client.findFirst({
+    where: { id: input.clientId, workspaceId: input.workspaceId },
+    select: { id: true },
+  });
+  if (!client) {
+    return null;
+  }
+
+  const hourlyRate = input.hourlyRate.toFixed(2);
+  const row = await getPrisma().billingRate.upsert({
+    where: {
+      clientId_year_month: {
+        clientId: input.clientId,
+        year: input.year,
+        month: input.month,
+      },
+    },
+    create: {
+      workspaceId: input.workspaceId,
+      clientId: input.clientId,
+      year: input.year,
+      month: input.month,
+      hourlyRate,
+      currency: input.currency,
+    },
+    update: { hourlyRate, currency: input.currency },
+    select: BILLING_RATE_SELECT,
+  });
+
+  return toBillingRateRecord(row);
+}
+
+export type InternalCostRateWriteInput = {
+  workspaceId: string;
+  year: number;
+  month: number;
+  hourlyRate: Decimal;
+  currency: Currency;
+};
+
+/** Creates or corrects the workspace's internal cost change point for the month. */
+export async function upsertInternalCostRate(
+  input: InternalCostRateWriteInput,
+): Promise<InternalCostRateRecord> {
+  const hourlyRate = input.hourlyRate.toFixed(2);
+  const row = await getPrisma().internalCostRate.upsert({
+    where: {
+      workspaceId_year_month: {
+        workspaceId: input.workspaceId,
+        year: input.year,
+        month: input.month,
+      },
+    },
+    create: {
+      workspaceId: input.workspaceId,
+      year: input.year,
+      month: input.month,
+      hourlyRate,
+      currency: input.currency,
+    },
+    update: { hourlyRate, currency: input.currency },
+    select: INTERNAL_COST_RATE_SELECT,
+  });
+
+  return toInternalCostRateRecord(row);
 }
