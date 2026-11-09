@@ -150,8 +150,14 @@ Working today:
   `NON_BILLABLE`), a status, its own reference currency and optional start/end dates; a
   billable model requires a client, and `INTERNAL`/`NON_BILLABLE` are shown as producing
   no revenue. Create/edit through `?editClient=` / `?editProject=`. Only `OWNER` and
-  `ADMIN` write; every member of the workspace reads. No revenue entry or invoice exists
-  yet (M10-02).
+  `ADMIN` write; every member of the workspace reads.
+- Recurring business expenses (`/micro-business/expenses`): software renewals,
+  contractors, insurance and planning reserves, with monthly, quarterly or yearly
+  cadence. Due dates are computed on read from the start date — day-of-month clamped to
+  the month's length, end date inclusive — so re-rendering can never duplicate an
+  occurrence, and nothing is written to the budget. Every amount is a planning estimate:
+  no payment is made and this is not tax advice. Definitions are created and deleted;
+  no occurrence row exists to edit. No revenue entry or invoice exists yet (M10-02).
 - Property events (real-estate, « Échéances et obligations »): taxes, insurance,
   maintenance, leases, inspections, loan deadlines and renovation tracked as dated
   reminders — kind, optional calendar date, status (planned, done, cancelled), notes and

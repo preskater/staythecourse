@@ -119,6 +119,8 @@ describe("AUDIT_ACTIONS", () => {
       "transaction.transfer",
       "transaction.reconcile",
       "transaction.salary_book",
+      "business_expense.create",
+      "business_expense.delete",
       "rate.write",
       "module.enable",
       "module.disable",

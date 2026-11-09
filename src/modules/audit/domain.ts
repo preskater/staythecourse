@@ -34,6 +34,9 @@ export const AUDIT_ACTIONS = [
   "transaction.transfer",
   "transaction.reconcile",
   "transaction.salary_book",
+  // Recurring business expenses (M10-05): definitions, never ledger rows.
+  "business_expense.create",
+  "business_expense.delete",
   // Configuration that changes what the dashboard computes.
   "rate.write",
   "module.enable",
@@ -65,6 +68,7 @@ export const AUDIT_ENTITY_TYPES = [
   "TRANSACTION",
   "TRANSFER",
   "SALARY_RATE",
+  "BUSINESS_EXPENSE",
   "MODULE",
   "INTEGRATION",
   "OPERATION",
