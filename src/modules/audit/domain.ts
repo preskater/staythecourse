@@ -36,6 +36,9 @@ export const AUDIT_ACTIONS = [
   "transaction.salary_book",
   // Configuration that changes what the dashboard computes.
   "rate.write",
+  // Estimate versions (M10-04): creation and approval are the only transitions.
+  "estimate.version_create",
+  "estimate.approve",
   "module.enable",
   "module.disable",
   // Provider connections and deferred reads.
@@ -65,6 +68,7 @@ export const AUDIT_ENTITY_TYPES = [
   "TRANSACTION",
   "TRANSFER",
   "SALARY_RATE",
+  "ESTIMATE",
   "MODULE",
   "INTEGRATION",
   "OPERATION",

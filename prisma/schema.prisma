@@ -68,6 +68,23 @@ enum ProjectStatus {
   COMPLETED
 }
 
+/// What an estimate version is. The first version of a project is the baseline; later
+/// versions are revisions or approved change requests.
+enum EstimateVersionKind {
+  BASELINE
+  REVISION
+  CHANGE_REQUEST
+}
+
+/// The lifecycle of an estimate version. A draft can be approved; approving a newer
+/// version marks the previous approved one `SUPERSEDED`. Nothing is ever edited in
+/// place: a correction is a new version.
+enum EstimateVersionStatus {
+  DRAFT
+  APPROVED
+  SUPERSEDED
+}
+
 /// Recurring obligations of a property that are not financial transactions yet.
 enum PropertyEventKind {
   TAX
@@ -240,6 +257,7 @@ model Workspace {
   connections          IntegrationConnection[]
   clients              Client[]
   projects             Project[]
+  estimateVersions     EstimateVersion[]
   alerts               Alert[]
   alertRules           AlertRule[]
   auditEvents          AuditEvent[]
@@ -814,10 +832,63 @@ model Project {
   /// `SetNull` only matters for a client row removed by a future maintenance path:
   /// archiving a client keeps its projects linked.
   client    Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  estimateVersions EstimateVersion[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
   @@index([workspaceId, clientId])
+}
+
+/// One version of a project's estimate: the baseline, a revision or a scope-change
+/// request. Item amounts are signed lines (`EstimateItem`), so a revision can state a
+/// reduction explicitly.
+///
+/// A version is immutable once created: there is no edit path. Approving a draft is
+/// the only transition and, in one transaction, marks the project's previous approved
+/// version `SUPERSEDED`. Comparisons are computed from the stored lines, never from a
+/// saved snapshot, so the output is reproducible months later.
+///
+/// The currency is the project's reference currency at creation time; nothing is
+/// converted between projects.
+model EstimateVersion {
+  id            String                @id @default(cuid())
+  workspaceId   String
+  projectId     String
+  /// 1-based, unique per project; the baseline is always 1.
+  versionNumber Int
+  kind          EstimateVersionKind
+  status        EstimateVersionStatus @default(DRAFT)
+  currency      String                @db.Char(3)
+  assumptions   String?
+  notes         String?
+  /// Set by the approval; null while a draft or once superseded.
+  approvedAt    DateTime?             @db.Timestamptz(3)
+  createdAt     DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime              @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  items     EstimateItem[]
+
+  @@unique([projectId, versionNumber])
+  @@index([workspaceId, projectId, versionNumber])
+}
+
+/// One line of an estimate version. The label is unique inside a version, which is
+/// what makes a comparison by label unambiguous and deterministic.
+model EstimateItem {
+  id        String  @id @default(cuid())
+  versionId String
+  label     String
+  /// Signed exact amount, in the version's currency.
+  amount    Decimal @db.Decimal(18, 2)
+  /// Source order of the line, preserved for display.
+  position  Int
+
+  version EstimateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, label])
+  @@index([versionId])
 }
 
 /// A dated obligation of a property: a tax, an insurance premium, a lease renewal,

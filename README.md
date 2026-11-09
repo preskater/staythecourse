@@ -150,8 +150,14 @@ Working today:
   `NON_BILLABLE`), a status, its own reference currency and optional start/end dates; a
   billable model requires a client, and `INTERNAL`/`NON_BILLABLE` are shown as producing
   no revenue. Create/edit through `?editClient=` / `?editProject=`. Only `OWNER` and
-  `ADMIN` write; every member of the workspace reads. No revenue entry or invoice exists
-  yet (M10-02).
+  `ADMIN` write; every member of the workspace reads.
+- Estimates (`/micro-business/estimates`): immutable versions per project — baseline,
+  revisions and change requests — with `Libellé | montant` lines (signed, so a reduction
+  is explicit) and assumptions. The first version must be the baseline; approving a
+  draft supersedes the previous approved version in one transaction, and no version is
+  ever edited. A comparison is recomputed from the stored lines on every request
+  (added/removed/changed by label, totals and delta), so it is reproducible months
+  later. No revenue entry or invoice exists yet (M10-02).
 - Property events (real-estate, « Échéances et obligations »): taxes, insurance,
   maintenance, leases, inspections, loan deadlines and renovation tracked as dated
   reminders — kind, optional calendar date, status (planned, done, cancelled), notes and

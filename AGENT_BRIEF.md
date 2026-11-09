@@ -99,6 +99,11 @@ docs/                architecture/overview.md, decisions/
   producing no revenue. A billable project requires a client. `archivedAt` is a
   reversible stamp: archiving writes no other column, so an archived record keeps
   everything, and names stay unique per workspace (archived rows included).
+- `EstimateVersion` (unique version number per project) and `EstimateItem` (unique label
+  inside a version) store the estimate history. A version is created once and never
+  edited; approval is the only transition (`DRAFT` → `APPROVED`, previous approved →
+  `SUPERSEDED`, both writes in one transaction). Comparisons are computed from the item
+  rows, not stored.
 - `ProjectSnapshot` / `IssueSnapshot` / `MilestoneSnapshot` are keyed by
   `(connectionId, externalId)` — that is what makes a sync re-runnable.
 
@@ -235,6 +240,11 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
   (`ACTIVE`/`COMPLETED`), its own currency and optional start/end dates; a billable model
   requires a client. Create/edit via `?editClient=` / `?editProject=`, archive/restore
   with one click. Only `OWNER`/`ADMIN` write; every member reads.
+- Estimates (`/micro-business/estimates`): immutable versions per project (baseline,
+  revision, change request) with signed `Libellé | montant` lines and assumptions. The
+  first version is the baseline; approving a draft supersedes the previous approved
+  version in one transaction. No edit path exists. Comparison is a pure function of the
+  stored lines (added/removed/changed by label, totals, delta), recomputed on read.
 - AI costs (`src/modules/ai-costs`): canonical `CostEntry` (signed exact amount,
   currency, mandatory actuality, immutable source reference, inclusive period, optional
   dimensions) and `CostAllocation` splits across project/client/repository/developer/
@@ -271,8 +281,9 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
 ## Not implemented (do not assume they exist)
 
 - No scheduler/cron for sync — the function exists, only the manual trigger ships.
-- The `micro-business` module has clients and projects only: no revenue entry, invoice,
-  credit note, payment, rate card or business expense yet (M10-02 and later).
+- The `micro-business` module has clients, projects and estimate versions only: no
+  revenue entry/invoice/credit note/payment (M10-02), rate card or internal cost
+  (M10-03) and recurring business expense (M10-05) yet.
 - Properties and cashflow entries cannot be edited or deleted from the interface yet.
   Loans (financing), accounts (rename/retype/archive/restore), categories
   (rename/merge/delete) and recurring series (edit) are managed in the interface

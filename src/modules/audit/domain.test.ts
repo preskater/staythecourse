@@ -120,6 +120,8 @@ describe("AUDIT_ACTIONS", () => {
       "transaction.reconcile",
       "transaction.salary_book",
       "rate.write",
+      "estimate.version_create",
+      "estimate.approve",
       "module.enable",
       "module.disable",
       "integration.connect",
