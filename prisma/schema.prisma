@@ -68,6 +68,14 @@ enum ProjectStatus {
   COMPLETED
 }
 
+/// An invoice, or the explicit credit note that reduces one. A credit note is a record
+/// of its own (never a negative invoice): it names the invoice it reduces, and all
+/// derived figures read it as a deduction.
+enum RevenueDocumentKind {
+  INVOICE
+  CREDIT_NOTE
+}
+
 /// Recurring obligations of a property that are not financial transactions yet.
 enum PropertyEventKind {
   TAX
@@ -240,6 +248,10 @@ model Workspace {
   connections          IntegrationConnection[]
   clients              Client[]
   projects             Project[]
+  revenueDocuments     RevenueDocument[]
+  revenuePayments      RevenuePayment[]
+  revenueRefunds       RevenueRefund[]
+  revenueWriteOffs     RevenueWriteOff[]
   alerts               Alert[]
   alertRules           AlertRule[]
   auditEvents          AuditEvent[]
@@ -781,6 +793,7 @@ model Client {
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   projects  Project[]
+  revenueDocuments RevenueDocument[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -814,10 +827,116 @@ model Project {
   /// `SetNull` only matters for a client row removed by a future maintenance path:
   /// archiving a client keeps its projects linked.
   client    Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  revenueDocuments RevenueDocument[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
   @@index([workspaceId, clientId])
+}
+
+/// One invoice or credit note of the micro-business workspace.
+///
+/// Amounts are positive magnitudes; `kind` carries the direction. A credit note is an
+/// explicit record that names the invoice it reduces (`creditNoteForId`), never a
+/// negative invoice: payments, refunds and write-offs attach to invoices only.
+///
+/// Recognition is stored as a frozen snapshot — `recognizedOn` and `recognizedAmount`
+/// are set together, or not at all. The versioned recognition rules arrive with
+/// M15-01; until then the owner states the figure and later edits never rewrite it.
+/// Statuses (open, partially paid, paid, overdue, written off, credited) are always
+/// derived from these rows and the current day, never stored.
+model RevenueDocument {
+  id               String              @id @default(cuid())
+  workspaceId      String
+  projectId        String
+  /// Snapshot of the project's client at issue time.
+  clientId         String?
+  /// Set on a credit note: the invoice it reduces.
+  creditNoteForId  String?
+  kind             RevenueDocumentKind
+  currency         String              @db.Char(3)
+  /// Positive magnitude, in the document's currency.
+  amount           Decimal             @db.Decimal(18, 2)
+  /// Invoice issue day, and the credit note's own issue day.
+  issuedOn         DateTime            @db.Date
+  /// Payment deadline of an invoice; null on a credit note.
+  dueOn            DateTime?           @db.Date
+  /// Recognition snapshot: both fields are set, or both are null.
+  recognizedOn     DateTime?           @db.Date
+  recognizedAmount Decimal?            @db.Decimal(18, 2)
+  notes            String?
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
+
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  client        Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  creditNoteFor RevenueDocument?  @relation("RevenueCreditNotes", fields: [creditNoteForId], references: [id], onDelete: Restrict)
+  creditedBy    RevenueDocument[] @relation("RevenueCreditNotes")
+  payments      RevenuePayment[]
+  refunds       RevenueRefund[]
+  writeOffs     RevenueWriteOff[]
+
+  @@index([workspaceId, issuedOn])
+  @@index([workspaceId, projectId])
+  @@index([workspaceId, kind])
+}
+
+/// One received payment, possibly partial. Several payments settle one invoice; their
+/// sum is what the derived `paid` figure reads.
+model RevenuePayment {
+  id          String   @id @default(cuid())
+  workspaceId String
+  documentId  String
+  /// Positive magnitude, in the invoice's currency.
+  amount      Decimal  @db.Decimal(18, 2)
+  paidOn      DateTime @db.Date
+  notes       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document  RevenueDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, paidOn])
+  @@index([documentId])
+}
+
+/// Money returned to the client. A refund reduces the net amount received; it is never
+/// a negative payment.
+model RevenueRefund {
+  id          String   @id @default(cuid())
+  workspaceId String
+  documentId  String
+  /// Positive magnitude, in the invoice's currency.
+  amount      Decimal  @db.Decimal(18, 2)
+  refundedOn  DateTime @db.Date
+  notes       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document  RevenueDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, refundedOn])
+  @@index([documentId])
+}
+
+/// An explicit write-off of an unrecoverable balance. It is a decision with a date, not
+/// a silent status change; the invoice's derived status follows from it.
+model RevenueWriteOff {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  documentId   String
+  /// Positive magnitude, in the invoice's currency.
+  amount       Decimal  @db.Decimal(18, 2)
+  writtenOffOn DateTime @db.Date
+  notes        String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document  RevenueDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, writtenOffOn])
+  @@index([documentId])
 }
 
 /// A dated obligation of a property: a tax, an insurance premium, a lease renewal,

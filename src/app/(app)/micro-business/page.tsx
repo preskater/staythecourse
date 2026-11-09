@@ -96,6 +96,11 @@ export default async function MicroBusinessPage({
       <PageHeader
         title="Micro-entreprise"
         description="Clients et projets de l'espace. Le modèle de facturation de chaque projet rend explicite ce qui produira un revenu : un projet interne ou non facturable n'en attend aucun. Archiver conserve toutes les données."
+        actions={
+          <Link href="/micro-business/revenue" className="text-xs underline">
+            Revenus →
+          </Link>
+        }
       />
 
       {canManage ? null : (
