@@ -68,6 +68,15 @@ enum ProjectStatus {
   COMPLETED
 }
 
+/// What a recurring business outflow is. `RESERVE` is a planning envelope (for example
+/// a social-charge reserve); every kind is an estimate for planning, never a payment or
+/// tax advice.
+enum BusinessExpenseKind {
+  EXPENSE
+  OBLIGATION
+  RESERVE
+}
+
 /// Recurring obligations of a property that are not financial transactions yet.
 enum PropertyEventKind {
   TAX
@@ -240,6 +249,7 @@ model Workspace {
   connections          IntegrationConnection[]
   clients              Client[]
   projects             Project[]
+  businessExpenses     BusinessExpense[]
   alerts               Alert[]
   alertRules           AlertRule[]
   auditEvents          AuditEvent[]
@@ -818,6 +828,41 @@ model Project {
   @@unique([workspaceId, name])
   @@index([workspaceId])
   @@index([workspaceId, clientId])
+}
+
+/// A recurring business outflow: software renewals, contractors, insurance, or a
+/// planning reserve (for example social charges).
+///
+/// The definition never writes to the budget ledger. Its occurrences are computed from
+/// the cadence and the start date on read, so re-running the computation cannot create
+/// a duplicate. `amount` is a positive magnitude in the record's currency; every figure
+/// is a planning estimate, never a payment, an accounting entry or tax advice.
+///
+/// Cadence and due-day rules are the budget module's: counted from the start month, with
+/// the start day clamped to the month's length (31 → 28/29 February, 30 April), and the
+/// end date inclusive.
+model BusinessExpense {
+  id          String               @id @default(cuid())
+  workspaceId String
+  label       String
+  /// Payee or supplier, free text, optional.
+  vendor      String?
+  kind        BusinessExpenseKind  @default(EXPENSE)
+  /// Positive magnitude, in the record's currency.
+  amount      Decimal              @db.Decimal(18, 2)
+  currency    String               @default("EUR") @db.Char(3)
+  frequency   RecurrenceFrequency  @default(MONTHLY)
+  /// First day of the series; its day-of-month is the renewal day.
+  startDate   DateTime             @db.Date
+  /// Last day of the series, inclusive; null means no end.
+  endDate     DateTime?            @db.Date
+  notes       String?
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, startDate])
 }
 
 /// A dated obligation of a property: a tax, an insurance premium, a lease renewal,

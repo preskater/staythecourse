@@ -99,6 +99,11 @@ docs/                architecture/overview.md, decisions/
   producing no revenue. A billable project requires a client. `archivedAt` is a
   reversible stamp: archiving writes no other column, so an archived record keeps
   everything, and names stay unique per workspace (archived rows included).
+- `BusinessExpense` stores a recurring business definition only (positive amount,
+  currency, `RecurrenceFrequency`, start/end dates, kind). No occurrence table exists:
+  `upcomingBusinessExpenses` computes the renewals on read with the budget's cadence and
+  clamping rules, so recomputation is duplicate-free. Every amount is a planning
+  estimate, never a payment or tax advice.
 - `ProjectSnapshot` / `IssueSnapshot` / `MilestoneSnapshot` are keyed by
   `(connectionId, externalId)` — that is what makes a sync re-runnable.
 
@@ -235,6 +240,12 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
   (`ACTIVE`/`COMPLETED`), its own currency and optional start/end dates; a billable model
   requires a client. Create/edit via `?editClient=` / `?editProject=`, archive/restore
   with one click. Only `OWNER`/`ADMIN` write; every member reads.
+- Recurring business expenses (`/micro-business/expenses`): definitions with a kind
+  (`EXPENSE`, `OBLIGATION`, `RESERVE`), positive amount, currency, cadence and
+  start/end dates. Occurrences are computed on read with the budget's day-of-month and
+  cadence rules (clamped day, cadence from the start month, inclusive end) — no row is
+  materialised, so no duplicate can be created. Amounts are planning estimates only; no
+  payment, budget entry or tax advice.
 - AI costs (`src/modules/ai-costs`): canonical `CostEntry` (signed exact amount,
   currency, mandatory actuality, immutable source reference, inclusive period, optional
   dimensions) and `CostAllocation` splits across project/client/repository/developer/
@@ -271,8 +282,9 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
 ## Not implemented (do not assume they exist)
 
 - No scheduler/cron for sync — the function exists, only the manual trigger ships.
-- The `micro-business` module has clients and projects only: no revenue entry, invoice,
-  credit note, payment, rate card or business expense yet (M10-02 and later).
+- The `micro-business` module has clients, projects and recurring business expenses
+  only: no revenue entry/invoice/credit note/payment (M10-02), rate card or internal
+  cost (M10-03) and estimate or scope-change version (M10-04) yet.
 - Properties and cashflow entries cannot be edited or deleted from the interface yet.
   Loans (financing), accounts (rename/retype/archive/restore), categories
   (rename/merge/delete) and recurring series (edit) are managed in the interface
