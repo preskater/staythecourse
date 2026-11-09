@@ -8,8 +8,6 @@ import {
   unexpectedResult,
   type ActionResult,
 } from "@/lib/actions";
-import { requireModule, type SessionUser } from "@/lib/auth/guard";
-import { canManageBusinessRecords } from "@/modules/identity/workspace";
 import {
   archiveInputSchema,
   clientInputSchema,
@@ -27,30 +25,17 @@ import {
   updateClient,
   updateProject,
 } from "@/modules/micro-business/repository";
+import { requireBusinessManager } from "./manager-guard";
 
 /**
  * Write Server Actions for the micro-business module.
  *
  * Same contract as the other modules: the session first, then the module entitlement,
- * then the role. Only the workspace's owner and admins write commercial records — a
- * `MEMBER` or `VIEWER` reads them and writes nothing. Every identifier from the browser
- * is looked up workspace-scoped, so a foreign one is "not found".
+ * then the role (see `manager-guard.ts`). Only the workspace's owner and admins write
+ * commercial records — a `MEMBER` or `VIEWER` reads them and writes nothing. Every
+ * identifier from the browser is looked up workspace-scoped, so a foreign one is
+ * "not found".
  */
-
-const MANAGER_MESSAGE =
-  "Seuls le propriétaire et les administrateurs de l'espace peuvent modifier les clients et les projets.";
-
-type ManagerGuard = { user: SessionUser } | { refusal: ActionResult };
-
-async function requireManager(): Promise<ManagerGuard> {
-  const user = await requireModule("micro-business", "write");
-
-  if (!canManageBusinessRecords(user.workspace.role)) {
-    return { refusal: { status: "error", message: MANAGER_MESSAGE } };
-  }
-
-  return { user };
-}
 
 function refreshBusinessPages(): void {
   revalidatePath("/micro-business");
@@ -62,7 +47,7 @@ const DUPLICATE_CLIENT = "Un autre client porte déjà ce nom.";
 const DUPLICATE_PROJECT = "Un autre projet porte déjà ce nom.";
 
 export async function createClientAction(values: unknown): Promise<ActionResult> {
-  const guard = await requireManager();
+  const guard = await requireBusinessManager();
   if ("refusal" in guard) {
     return guard.refusal;
   }
@@ -87,7 +72,7 @@ export async function createClientAction(values: unknown): Promise<ActionResult>
 }
 
 export async function updateClientAction(values: unknown): Promise<ActionResult> {
-  const guard = await requireManager();
+  const guard = await requireBusinessManager();
   if ("refusal" in guard) {
     return guard.refusal;
   }
@@ -122,7 +107,7 @@ export async function updateClientAction(values: unknown): Promise<ActionResult>
 }
 
 export async function setClientArchivedAction(values: unknown): Promise<ActionResult> {
-  const guard = await requireManager();
+  const guard = await requireBusinessManager();
   if ("refusal" in guard) {
     return guard.refusal;
   }
@@ -146,7 +131,7 @@ export async function setClientArchivedAction(values: unknown): Promise<ActionRe
 }
 
 export async function createProjectAction(values: unknown): Promise<ActionResult> {
-  const guard = await requireManager();
+  const guard = await requireBusinessManager();
   if ("refusal" in guard) {
     return guard.refusal;
   }
@@ -179,7 +164,7 @@ export async function createProjectAction(values: unknown): Promise<ActionResult
 }
 
 export async function updateProjectAction(values: unknown): Promise<ActionResult> {
-  const guard = await requireManager();
+  const guard = await requireBusinessManager();
   if ("refusal" in guard) {
     return guard.refusal;
   }
@@ -218,7 +203,7 @@ export async function updateProjectAction(values: unknown): Promise<ActionResult
 }
 
 export async function setProjectArchivedAction(values: unknown): Promise<ActionResult> {
-  const guard = await requireManager();
+  const guard = await requireBusinessManager();
   if ("refusal" in guard) {
     return guard.refusal;
   }

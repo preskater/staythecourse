@@ -92,7 +92,7 @@ beforeEach(() => {
   touchSessionMock.mockReset().mockResolvedValue(undefined);
   findOwnerByIdMock.mockReset().mockResolvedValue(owner);
   listMembershipsMock.mockReset().mockResolvedValue([membership("OWNER")]);
-  upsertConnectionMock.mockReset().mockResolvedValue(undefined);
+  upsertConnectionMock.mockReset().mockResolvedValue({ id: "connection-1" });
   synchroniseConnectionMock.mockReset().mockResolvedValue({ status: "SYNCHRONISED" });
   redirectMock.mockReset();
   revalidatePathMock.mockReset();
