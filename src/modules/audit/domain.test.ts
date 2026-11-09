@@ -124,6 +124,8 @@ describe("AUDIT_ACTIONS", () => {
       "revenue.payment",
       "revenue.refund",
       "revenue.write_off",
+      "business_expense.create",
+      "business_expense.delete",
       "rate.write",
       "rate.billing_write",
       "rate.internal_write",

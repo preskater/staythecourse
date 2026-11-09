@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import { assertCurrency, type Currency } from "@/lib/money";
 import { getPrisma } from "@/lib/db";
+import type { RecurrenceFrequency } from "@/modules/budget/recurrence";
 import type {
   BillingModel,
   ClientSummary,
@@ -9,6 +10,7 @@ import type {
 } from "./domain";
 import type { RevenueDocumentKind, RevenueDocumentRecord } from "./revenue";
 import type { BillingRateRecord, InternalCostRateRecord } from "./rates";
+import type { BusinessExpenseKind, BusinessExpenseRecord } from "./expenses";
 
 /**
  * Micro-business persistence. Every query is scoped to the workspace resolved from the
@@ -451,6 +453,101 @@ export async function createRevenueDocument(
   });
 }
 
+/**
+ * Recurring business expense persistence (M10-05).
+ *
+ * A definition is read and written as a whole; occurrences are never stored, so the
+ * table has no unique date key to maintain and no materialisation can duplicate. Every
+ * query is workspace-scoped.
+ */
+
+const BUSINESS_EXPENSE_SELECT = {
+  id: true,
+  label: true,
+  vendor: true,
+  kind: true,
+  amount: true,
+  currency: true,
+  frequency: true,
+  startDate: true,
+  endDate: true,
+  notes: true,
+} as const;
+
+type BusinessExpenseRow = {
+  id: string;
+  label: string;
+  vendor: string | null;
+  kind: string;
+  amount: Decimal;
+  currency: string;
+  frequency: string;
+  startDate: Date;
+  endDate: Date | null;
+  notes: string | null;
+};
+
+function toBusinessExpenseRecord(row: BusinessExpenseRow): BusinessExpenseRecord {
+  return {
+    id: row.id,
+    label: row.label,
+    vendor: row.vendor,
+    kind: row.kind as BusinessExpenseKind,
+    amount: new Decimal(row.amount.toString()),
+    currency: assertCurrency(row.currency),
+    frequency: row.frequency as RecurrenceFrequency,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    notes: row.notes,
+  };
+}
+
+/** Every definition of the workspace, by start date then label. */
+export async function listBusinessExpenses(
+  workspaceId: string,
+): Promise<BusinessExpenseRecord[]> {
+  const rows = await getPrisma().businessExpense.findMany({
+    where: { workspaceId },
+    select: BUSINESS_EXPENSE_SELECT,
+    orderBy: [{ startDate: "asc" }, { label: "asc" }],
+  });
+
+  return rows.map(toBusinessExpenseRecord);
+}
+
+export type BusinessExpenseWriteInput = {
+  workspaceId: string;
+  label: string;
+  vendor: string | null;
+  kind: BusinessExpenseKind;
+  amount: Decimal;
+  currency: Currency;
+  frequency: RecurrenceFrequency;
+  startDate: Date;
+  endDate: Date | null;
+  notes: string | null;
+};
+
+export async function createBusinessExpense(
+  input: BusinessExpenseWriteInput,
+): Promise<{ id: string }> {
+  return getPrisma().businessExpense.create({
+    data: {
+      workspaceId: input.workspaceId,
+      label: input.label.trim(),
+      vendor: input.vendor,
+      kind: input.kind,
+      amount: input.amount.toFixed(2),
+      currency: input.currency,
+      frequency: input.frequency,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      notes: input.notes,
+    },
+    select: { id: true },
+  });
+}
+
 export type RevenueMovementWriteInput =
   | {
       type: "PAYMENT";
@@ -704,4 +801,16 @@ export async function upsertInternalCostRate(
   });
 
   return toInternalCostRateRecord(row);
+}
+
+/** Deletes one definition, workspace-scoped; `false` means "gone or not yours". */
+export async function deleteBusinessExpense(
+  workspaceId: string,
+  expenseId: string,
+): Promise<boolean> {
+  const { count } = await getPrisma().businessExpense.deleteMany({
+    where: { id: expenseId, workspaceId },
+  });
+
+  return count === 1;
 }
