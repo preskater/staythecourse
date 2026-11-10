@@ -1,5 +1,4 @@
 import Decimal from "decimal.js";
-import Link from "next/link";
 import {
   Badge,
   Card,
@@ -30,6 +29,7 @@ import {
   type RevenueStatement,
   type RevenueStatus,
 } from "@/modules/micro-business/revenue";
+import { MicroBusinessTabs } from "../micro-business-tabs";
 import { RevenueDocumentForm } from "./revenue-form";
 import { RevenueMovementForm } from "./revenue-movement-form";
 
@@ -154,12 +154,9 @@ export default async function RevenuePage() {
       <PageHeader
         title="Revenus"
         description="Factures, avoirs, encaissements, remboursements et mises en perte. Le statut est recalculé à chaque lecture à partir des mouvements datés : rien ne se fige. Un trop-perçu est refusé ; un avoir est le chemin explicite pour réduire une facture. Les devises ne sont jamais converties."
-        actions={
-          <Link href="/micro-business" className="text-xs underline">
-            ← Micro-entreprise
-          </Link>
-        }
       />
+
+      <MicroBusinessTabs current="/micro-business/revenue" />
 
       {canManage ? null : (
         <Notice tone="info">

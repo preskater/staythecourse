@@ -26,6 +26,7 @@ import {
 import { listClients, listProjects } from "@/modules/micro-business/repository";
 import { ArchiveToggle } from "./archive-toggle";
 import { ClientForm } from "./client-form";
+import { MicroBusinessTabs } from "./micro-business-tabs";
 import { ProjectForm, type ClientOption } from "./project-form";
 
 export const dynamic = "force-dynamic";
@@ -96,12 +97,9 @@ export default async function MicroBusinessPage({
       <PageHeader
         title="Micro-entreprise"
         description="Clients et projets de l'espace. Le modèle de facturation de chaque projet rend explicite ce qui produira un revenu : un projet interne ou non facturable n'en attend aucun. Archiver conserve toutes les données."
-        actions={
-          <Link href="/micro-business/revenue" className="text-xs underline">
-            Revenus →
-          </Link>
-        }
       />
+
+      <MicroBusinessTabs current="/micro-business" />
 
       {canManage ? null : (
         <Notice tone="info">
