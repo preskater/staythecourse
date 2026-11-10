@@ -11,6 +11,7 @@ const upsertConnectionMock = vi.fn();
 const synchroniseConnectionMock = vi.fn();
 const redirectMock = vi.fn();
 const revalidatePathMock = vi.fn();
+const recordAuditEventSafelyMock = vi.fn();
 
 vi.mock("@/auth", () => ({ auth: () => authMock() }));
 vi.mock("@/modules/identity/sessions", () => ({
@@ -38,6 +39,9 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/cache", () => ({
   revalidatePath: (...args: unknown[]) => revalidatePathMock(...args),
+}));
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditEventSafelyMock(...args),
 }));
 
 const { connectProviderAction, syncConnectionAction } = await import("./actions");
@@ -92,10 +96,11 @@ beforeEach(() => {
   touchSessionMock.mockReset().mockResolvedValue(undefined);
   findOwnerByIdMock.mockReset().mockResolvedValue(owner);
   listMembershipsMock.mockReset().mockResolvedValue([membership("OWNER")]);
-  upsertConnectionMock.mockReset().mockResolvedValue(undefined);
+  upsertConnectionMock.mockReset().mockResolvedValue({ id: "connection-1" });
   synchroniseConnectionMock.mockReset().mockResolvedValue({ status: "SYNCHRONISED" });
   redirectMock.mockReset();
   revalidatePathMock.mockReset();
+  recordAuditEventSafelyMock.mockReset();
 });
 
 describe("forged Server Action calls", () => {
@@ -105,6 +110,8 @@ describe("forged Server Action calls", () => {
     await expect(connectProviderAction(connectionForm())).rejects.toThrow("not-found");
 
     expect(upsertConnectionMock).not.toHaveBeenCalled();
+    // A refusal writes nothing: the trail records what happened, not what was tried.
+    expect(recordAuditEventSafelyMock).not.toHaveBeenCalled();
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
@@ -116,6 +123,7 @@ describe("forged Server Action calls", () => {
     await expect(syncConnectionAction(form)).rejects.toThrow("not-found");
 
     expect(synchroniseConnectionMock).not.toHaveBeenCalled();
+    expect(recordAuditEventSafelyMock).not.toHaveBeenCalled();
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
@@ -131,5 +139,16 @@ describe("forged Server Action calls", () => {
       workspaceId: "ws-1",
       provider: "GITHUB",
     });
+
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledTimes(1);
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-1",
+        actorId: owner.id,
+        action: "integration.connect",
+        entityId: "connection-1",
+        outcome: "SUCCESS",
+      }),
+    );
   });
 });
