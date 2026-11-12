@@ -164,6 +164,11 @@ export default async function PropertyCalendarPage({
     month: monthKey,
   });
 
+  // The filter controls are uncontrolled, so `defaultValue` only reaches them on mount,
+  // while Next.js re-renders this page in place on navigation. Keying the form on the
+  // URL state it mirrors remounts it, so « Réinitialiser » never leaves a stale choice.
+  const filtersFormKey = `${requestedView}|${monthKey}|${propertyFilter}|${statusFilter}`;
+
   const hasFilters = Boolean(propertyFilter || statusFilter);
   const undatedCount = listEntries.filter((entry) => entry.dueDate === null).length;
   const emptyDescription = hasFilters
@@ -244,6 +249,7 @@ export default async function PropertyCalendarPage({
           ) : null}
 
           <form
+            key={filtersFormKey}
             method="get"
             action="/real-estate/calendar"
             className="flex w-full flex-wrap items-center gap-2 border-t border-zinc-200 pt-3 sm:w-auto sm:border-0 sm:pt-0 dark:border-zinc-800"
