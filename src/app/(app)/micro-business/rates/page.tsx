@@ -26,6 +26,7 @@ import {
 } from "@/modules/micro-business/repository";
 import { BillingRateForm } from "./billing-rate-form";
 import { InternalRateForm } from "./internal-rate-form";
+import { MicroBusinessTabs } from "../micro-business-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -69,12 +70,9 @@ export default async function RatesPage() {
       <PageHeader
         title="Tarifs"
         description="Tarifs clients et coûts internes, tous deux datés par mois. Un tarif s'applique à partir du mois saisi, jusqu'au changement suivant ; avant le premier point de changement, aucun taux n'est supposé. Aucune devise n'est convertie et aucun montant déjà calculé n'est réécrit."
-        actions={
-          <Link href="/micro-business" className="text-xs underline">
-            ← Micro-entreprise
-          </Link>
-        }
       />
+
+      <MicroBusinessTabs current="/micro-business/rates" />
 
       {canManage ? null : (
         <Notice tone="info">
