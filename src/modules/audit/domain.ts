@@ -55,6 +55,14 @@ export const AUDIT_ACTIONS = [
   "rate.internal_write",
   "module.enable",
   "module.disable",
+  // Workspace membership lifecycle (M8-01). The invitation token and the invited
+  // address never enter the trail: only codes, identifiers and counts.
+  "workspace.invite",
+  "workspace.invitation_revoke",
+  "workspace.invitation_accept",
+  "workspace.member_remove",
+  "workspace.member_role_change",
+  "workspace.ownership_transfer",
   // Provider connections and deferred reads.
   "integration.connect",
   "integration.sync",
@@ -89,6 +97,7 @@ export const AUDIT_ENTITY_TYPES = [
   "COST_IMPORT",
   "COST_ENTRY",
   "MODULE",
+  "INVITATION",
   "INTEGRATION",
   "OPERATION",
 ] as const;
