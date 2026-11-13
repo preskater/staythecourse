@@ -83,6 +83,11 @@ const NOT_OWNER_SCOPED: Record<string, string> = {
   "identity.countOwners": "single-owner bootstrap check",
   "identity.upsertOwner": "seed script, keyed by email",
   "identity.ensureDefaultWorkspace": "workspace id derived from the owner id; membership keyed by userId",
+  // Invitation acceptance is authorised by the bearer token, not by a session scope:
+  // the lookup by digest is the check, and the writes are keyed by the row it returned.
+  "identity.findWorkspaceInvitationByTokenHash": "bearer-token lookup; the token is the secret",
+  "identity.acceptWorkspaceInvitation": "keyed by the invitation resolved from the bearer token",
+  "identity.registerAndAcceptWorkspaceInvitation": "keyed by the invitation resolved from the bearer token",
   // Synchronisation writes run after `findConnectionForSync(userId, id)`, keyed by the
   // connection or run that check returned.
   "integrations.saveSnapshots": "keyed by an owner-checked connection",

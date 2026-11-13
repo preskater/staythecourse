@@ -54,7 +54,7 @@ export default async function LoginPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Tableau de bord</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Accès réservé au propriétaire. Aucune inscription publique.
+          Accès réservé aux membres d&apos;un espace. Aucune inscription publique.
         </p>
       </div>
 
@@ -98,8 +98,8 @@ export default async function LoginPage({
       </form>
 
       <p className="text-xs text-zinc-500 dark:text-zinc-400">
-        Le compte est créé par le script de départ (<code>npm run db:seed</code>), jamais
-        depuis cette page.
+        Un compte est créé par le script de départ (<code>npm run db:seed</code>) ou par
+        une invitation, jamais depuis cette page.
       </p>
     </main>
   );

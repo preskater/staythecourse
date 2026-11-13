@@ -230,8 +230,9 @@ model Workspace {
   createdAt DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt DateTime      @updatedAt @db.Timestamptz(3)
 
-  members WorkspaceMember[]
-  modules WorkspaceModule[]
+  members     WorkspaceMember[]
+  modules     WorkspaceModule[]
+  invitations WorkspaceInvitation[]
 
   accounts             Account[]
   categories           Category[]
@@ -290,7 +291,38 @@ model WorkspaceMember {
   @@index([userId])
 }
 
-/// Sole owner of the dashboard. No public sign-up: users are created by the seed script.
+/// One pending or past invitation to join a workspace (M8-01).
+///
+/// The raw token is never stored: `tokenHash` is its SHA-256 digest, and the link is
+/// shown once to the inviter. A token is single-use (`acceptedAt`), expiring
+/// (`expiresAt`) and revocable (`revokedAt`); the state is derived, never stored twice.
+/// `acceptedByUserId` is the account the invitation was bound to, so acceptance is
+/// evidence rather than an inference from the invited address.
+model WorkspaceInvitation {
+  id               String        @id @default(cuid())
+  workspaceId      String
+  /// Normalised lower-case address the invitation is addressed to.
+  email            String
+  /// Never OWNER: ownership is transferred explicitly, not granted by invitation.
+  role             WorkspaceRole
+  tokenHash        String        @unique
+  invitedById      String?
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  expiresAt        DateTime      @db.Timestamptz(3)
+  acceptedAt       DateTime?     @db.Timestamptz(3)
+  acceptedByUserId String?
+  revokedAt        DateTime?     @db.Timestamptz(3)
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy  User?     @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedBy User?     @relation("InvitationAcceptor", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, email])
+  @@index([workspaceId, createdAt])
+}
+
+/// One account. The seed creates the first; accepting an invitation creates the others.
+/// There is still no public sign-up: a valid invitation token is required.
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -317,6 +349,8 @@ model User {
   auditEvents AuditEvent[]
   memberships WorkspaceMember[]
   sessions    Session[]
+  sentInvitations     WorkspaceInvitation[] @relation("InvitationInviter")
+  acceptedInvitations WorkspaceInvitation[] @relation("InvitationAcceptor")
 }
 
 /// One signed-in browser session, persisted so the owner can revoke it.

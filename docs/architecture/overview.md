@@ -13,7 +13,7 @@ the pages that consume it.
 
 | Module | Responsibility | Key files |
 | --- | --- | --- |
-| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) and their permission presets. No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts`, `permissions.ts` |
+| `identity` | Accounts, workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) and their permission presets, plus invitations and the membership lifecycle (invite, accept, revoke, remove, transfer ownership). No public sign-up: the seed creates the first account and its personal workspace; a valid single-use invitation creates the others. | `repository.ts`, `workspace.ts`, `permissions.ts`, `invitations.ts` |
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
@@ -78,8 +78,8 @@ only matrix; the guards compose it with the session and the active workspace.
   `export`. The audit entry is written only after the permission check.
 - **Member management.** `canRemoveMember` and `canChangeMemberRole` never let an admin
   (or anyone else) remove or demote an owner, and nobody grants `OWNER` through this
-  path. Transferring ownership will be a separate, explicit operation (M8-01); role
-  changes will be audited with M18-02.
+  path. Invitations, role changes, removals and ownership transfers are audited;
+  ownership moves only through the explicit, owner-only transfer action (M8-01).
 - **Server-side only.** Pages may hide a control for comfort, but no component decides
   access: the role is read from the session's membership on every request.
 
@@ -921,7 +921,9 @@ beside its fields.
 
 ## Security model
 
-- Single owner, credentials hashed with bcrypt, Auth.js session as a signed JWT.
+- Accounts are created by the seed script or by accepting an invitation (M8-01), never
+  by public sign-up. Credentials are hashed with bcrypt; the Auth.js session is a
+  signed JWT.
 - Every private page, Route Handler and Server Action re-checks the session
   server-side. A valid signature is not enough: the owner row is looked up too, so a
   session that outlives a recreated database is treated as signed out (redirect to
@@ -932,6 +934,20 @@ beside its fields.
   without any membership is refused like a signed-out one, and a workspace id the user
   is not a member of reads as "not found". The migration gives each existing user a
   personal workspace (`ws-<userId>`) as `OWNER`.
+- Invitations (M8-01): an owner or admin creates a single-use link for an invited
+  address, with a role it may grant (never `OWNER`) and a 7-day expiry. Only the
+  SHA-256 digest of the token is stored; the link is shown once to the inviter because
+  no e-mail is sent. Acceptance is bound to the address on the invitation row — the
+  browser never supplies it — and a brand-new address gets its account in the same
+  transaction that consumes the invitation. Expired, revoked, reused and lost-race
+  links are refused with the same message. Re-inviting an address revokes its previous
+  live link. Removing a member takes effect on the member's next request because the
+  guard re-reads memberships; it is manager-only and audited.
+- Member management (M8-01) is manager-only (`manage-members`: `OWNER` and `ADMIN`).
+  An admin cannot grant admin or act on the owner, and nobody grants `OWNER` through an
+  invitation or a role change. The owner is never removable or demotable through this
+  path: ownership is transferred by a separate owner-only action that swaps the two
+  roles in one transaction.
 - Record scoping (M7-04): budget, real-estate, integration and alert records carry a
   `workspaceId`, and every repository function takes the active workspace's id
   (`user.workspace.id`) and filters on it — exports included. A foreign workspace's row

@@ -14,11 +14,16 @@ provider adapters) is implemented.
 
 Working today:
 
-- Owner authentication (Auth.js credentials, no public sign-up), with a **Compte**
-  page to change the owner password.
+- Authentication (Auth.js credentials, no public sign-up: the seed creates the first
+  account, a single-use invitation creates the others), with a **Compte** page to
+  change your own password.
 - Workspace roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) enforced server-side: a
   viewer can read but cannot write or export, an admin can manage members and modules
   but can never remove or demote the owner.
+- Household members (`/members`, owner and admin only): invite an address with a role
+  through a single-use 7-day link shown once (no e-mail is sent), revoke it, remove a
+  member, change a role, or transfer ownership explicitly. The owner can never be
+  removed or demoted silently. Every lifecycle event is audited.
 - Personal budget: accounts, categories, transactions entered from the budget
   page, monthly totals per currency, filters, CSV export, deletion with confirmation,
   correction of an existing operation and two charts (a 12-month trend and the month's
@@ -116,8 +121,10 @@ Working today:
 - Audit trail (`/audit`): append-only and workspace-scoped entries for sign-in and
   refusals, sign-out, session revocations, password changes,
   transaction creation/edition/deletion/transfer/
-  reconciliation/salary booking, salary-rate changes, module toggles, provider
-  connections and synchronisations, exports, and operator backup/restore. Rows carry a
+  reconciliation/salary booking, salary-rate changes, module toggles, invitations and
+  membership changes (invite, accept, revoke, remove, role change, ownership
+  transfer), provider connections and synchronisations, exports, and operator
+  backup/restore. Rows carry a
   timestamp, an action code, an entity reference, an outcome and safe metadata (counts,
   codes, calendar days) — never a label, an amount, a token or a password. Every writer
   goes through one server helper; nothing exposes an update or a delete, and the only
@@ -391,7 +398,7 @@ the fictitious values. The ones that matter most:
 | `INTEGRATION_ENCRYPTION_KEY` | AES-256-GCM key protecting provider tokens at rest: 32 bytes, base64 encoded. |
 | `AUTH_URL` | The public origin, needed behind the proxy. It must equal the address you browse — see [The proxy and the address you browse](#the-proxy-and-the-address-you-browse). |
 | `AUTH_TRUST_HOST` | Auth.js host trust; the compose stack sets `true`. |
-| `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`, `SEED_OWNER_NAME` | Create the single owner account. There is no public sign-up. |
+| `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`, `SEED_OWNER_NAME` | Create the initial account. Other accounts join through an invitation; there is no public sign-up. |
 | `SEED_OWNER_FORCE_PASSWORD` | `true` overwrites the stored hash with `SEED_OWNER_PASSWORD`; left unset, a password changed from the Compte page is kept. |
 | `NEXT_PUBLIC_DEFAULT_CURRENCY`, `NEXT_PUBLIC_DEFAULT_TIME_ZONE` | Interface defaults (`EUR`, `Europe/Paris`); the only variables shipped to the browser. |
 | `APP_BIND_HOST`, `APP_PORT` | Host interface and port published by the Compose application (`0.0.0.0:3000` by default). Use `APP_BIND_HOST=127.0.0.1` for local-only access. |
@@ -416,7 +423,7 @@ secret must never be added to that block.
 | `npm run db:generate` | Generate the Prisma client into `src/generated/prisma` (required before typecheck, tests or build) |
 | `npm run db:migrate` | Create and apply a migration (development) |
 | `npm run db:deploy` | Apply pending migrations (deployment) |
-| `npm run db:seed` | Create the owner account, or refresh its name (the stored password is kept) |
+| `npm run db:seed` | Create the initial account, or refresh its name (the stored password is kept) |
 | `npm run db:cleanup` | Delete synchronisation runs older than 90 days (keeps the latest success per connection) and audit events older than 365 days |
 | `npm run audit:operation -- backup.run SUCCESS` | Record an operator backup/restore in the audit trail |
 | `npm run db:studio` | Browse the database |

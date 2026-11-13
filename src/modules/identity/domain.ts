@@ -31,7 +31,7 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
 }
 
-const newPassword = z
+export const newPasswordSchema = z
   .string()
   .min(
     PASSWORD_MIN_LENGTH,
@@ -59,7 +59,7 @@ const newPassword = z
 export const passwordChangeSchema = z
   .object({
     currentPassword: z.string().min(1, "Saisissez votre mot de passe actuel."),
-    newPassword,
+    newPassword: newPasswordSchema,
     confirmPassword: z.string().min(1, "Confirmez le nouveau mot de passe."),
   })
   .refine((values) => values.newPassword === values.confirmPassword, {
