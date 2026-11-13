@@ -159,6 +159,13 @@ Working today:
   refused and the message names the credit-note path; a credit note never exceeds the
   remaining balance. Recognition is a frozen date + amount snapshot (versioned rules
   arrive with M15-01), and the monthly summary shows no row for a month without data.
+- Rate cards (`/micro-business/rates`): effective-dated client billing rates and
+  confidential internal loaded-cost rates, kept as separate change points — the most
+  recent entry at or before the month wins, and a month before the first entry has no
+  rate rather than a guessed default. Saving the same month corrects it; rates are never
+  deleted and no stored amount is recomputed. Internal rates require the
+  `read-internal-rates` permission (owner only until M18-01): without it the page never
+  queries or renders them. No revenue entry or invoice exists yet (M10-02).
 - Property events (real-estate, « Échéances et obligations »): taxes, insurance,
   maintenance, leases, inspections, loan deadlines and renovation tracked as dated
   reminders — kind, optional calendar date, status (planned, done, cancelled), notes and

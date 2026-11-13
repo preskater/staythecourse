@@ -125,6 +125,8 @@ describe("AUDIT_ACTIONS", () => {
       "revenue.refund",
       "revenue.write_off",
       "rate.write",
+      "rate.billing_write",
+      "rate.internal_write",
       "module.enable",
       "module.disable",
       "integration.connect",

@@ -252,6 +252,8 @@ model Workspace {
   revenuePayments      RevenuePayment[]
   revenueRefunds       RevenueRefund[]
   revenueWriteOffs     RevenueWriteOff[]
+  billingRates         BillingRate[]
+  internalCostRates    InternalCostRate[]
   alerts               Alert[]
   alertRules           AlertRule[]
   auditEvents          AuditEvent[]
@@ -794,6 +796,7 @@ model Client {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   projects  Project[]
   revenueDocuments RevenueDocument[]
+  billingRates BillingRate[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -937,6 +940,56 @@ model RevenueWriteOff {
 
   @@index([workspaceId, writtenOffOn])
   @@index([documentId])
+}
+
+/// One billing-rate change point for a client: the rate applies **from this month on**,
+/// until the next entry. Resolving a month means reading the most recent entry at or
+/// before it, like the salary change points of the budget module. The rate is stored
+/// only here — no document copies it — so correcting a change point never rewrites an
+/// amount that was already computed elsewhere.
+///
+/// A rate belongs to a client, not to a project: the same client may be billed at the
+/// same rate on several projects. The currency is explicit and never converted.
+model BillingRate {
+  id          String   @id @default(cuid())
+  workspaceId String
+  clientId    String
+  year        Int
+  /// 1-based month, as a human writes it.
+  month       Int
+  hourlyRate  Decimal  @db.Decimal(18, 2)
+  currency    String   @default("EUR") @db.Char(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// A client with rate history is never silently removed; archiving keeps it linked.
+  client    Client    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@unique([clientId, year, month])
+  @@index([workspaceId, clientId, year, month])
+}
+
+/// One confidential internal-cost change point, effective from its month until the
+/// next entry. It is deliberately a different record from `BillingRate`: a billing
+/// rate is what the client pays, an internal rate is what the work costs, and the two
+/// are never merged into one figure. The internal rate is readable only with the
+/// dedicated `read-internal-rates` permission (owner only until M18-01).
+model InternalCostRate {
+  id          String   @id @default(cuid())
+  workspaceId String
+  year        Int
+  /// 1-based month, as a human writes it.
+  month       Int
+  /// Loaded hourly cost (labour plus overhead), in the workspace's reference currency.
+  hourlyRate  Decimal  @db.Decimal(18, 2)
+  currency    String   @default("EUR") @db.Char(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, year, month])
 }
 
 /// A dated obligation of a property: a tax, an insurance premium, a lease renewal,

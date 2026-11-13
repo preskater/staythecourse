@@ -13,6 +13,11 @@ import type { WorkspaceRole } from "@/modules/identity/workspace";
  * Per the scope of M7-05 these are coarse presets. Fine-grained permissions that split
  * financial, developer, credential, internal-rate, personal-scope and export rights
  * arrive with M18-01; until then `export` follows the write presets.
+ *
+ * `read-internal-rates` is introduced early because M10-03 stores confidential loaded
+ * labour costs next to billing rates. It is granted to the owner only: an admin may
+ * manage clients and projects without seeing what the work costs internally. M18-01
+ * will refine the rest.
  */
 
 export const PERMISSIONS = [
@@ -21,13 +26,15 @@ export const PERMISSIONS = [
   "export",
   "manage-modules",
   "manage-members",
+  "read-internal-rates",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
 
 const ROLE_PERMISSIONS: Readonly<Record<string, ReadonlySet<Permission>>> = {
   OWNER: new Set(PERMISSIONS),
-  ADMIN: new Set(PERMISSIONS),
+  // An admin can manage the workspace without seeing confidential internal cost rates.
+  ADMIN: new Set<Permission>(PERMISSIONS.filter((permission) => permission !== "read-internal-rates")),
   MEMBER: new Set<Permission>(["read", "write", "export"]),
   // A viewer reads the workspace and nothing else: no write, no export, no settings.
   VIEWER: new Set<Permission>(["read"]),
