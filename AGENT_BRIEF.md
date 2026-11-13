@@ -99,6 +99,12 @@ docs/                architecture/overview.md, decisions/
   producing no revenue. A billable project requires a client. `archivedAt` is a
   reversible stamp: archiving writes no other column, so an archived record keeps
   everything, and names stay unique per workspace (archived rows included).
+- `RevenueDocument` (invoice or explicit credit note) stores positive magnitudes, an
+  optional `creditNoteForId`, and a frozen recognition snapshot (`recognizedOn` +
+  `recognizedAmount`, set together or not at all). `RevenuePayment` / `RevenueRefund` /
+  `RevenueWriteOff` attach positive, dated rows to an invoice. `statementOf` derives
+  net issued, paid, outstanding, overdue days and a status on every read; no status
+  column exists. Overpayment is refused; a credit note never exceeds the balance.
 - `ProjectSnapshot` / `IssueSnapshot` / `MilestoneSnapshot` are keyed by
   `(connectionId, externalId)` — that is what makes a sync re-runnable.
 
@@ -235,6 +241,13 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
   (`ACTIVE`/`COMPLETED`), its own currency and optional start/end dates; a billable model
   requires a client. Create/edit via `?editClient=` / `?editProject=`, archive/restore
   with one click. Only `OWNER`/`ADMIN` write; every member reads.
+- Revenue (`/micro-business/revenue`): invoices and explicit credit notes, with dated
+  payments, refunds and write-offs. Statuses (open, partially paid, paid, overdue,
+  written off, credited) and every figure are derived on read from the stored rows;
+  overpayment is refused, a credit note is the explicit correction path, and overdue
+  starts the day after the due date in the owner's time zone. Recognition is a frozen
+  `recognizedOn` + `recognizedAmount` snapshot (rules arrive with M15-01). The monthly
+  summary omits a month without data rather than showing zeros.
 - AI costs (`src/modules/ai-costs`): canonical `CostEntry` (signed exact amount,
   currency, mandatory actuality, immutable source reference, inclusive period, optional
   dimensions) and `CostAllocation` splits across project/client/repository/developer/
@@ -271,8 +284,10 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
 ## Not implemented (do not assume they exist)
 
 - No scheduler/cron for sync — the function exists, only the manual trigger ships.
-- The `micro-business` module has clients and projects only: no revenue entry, invoice,
-  credit note, payment, rate card or business expense yet (M10-02 and later).
+- The `micro-business` module has clients, projects and revenue documents only: no rate
+  card, estimate/version, recurring business expense or business-to-personal transfer
+  yet (M10-03 and later). Revenue records cannot be edited or deleted: a credit note,
+  refund or write-off is the explicit correction path.
 - Properties and cashflow entries cannot be edited or deleted from the interface yet.
   Loans (financing), accounts (rename/retype/archive/restore), categories
   (rename/merge/delete) and recurring series (edit) are managed in the interface

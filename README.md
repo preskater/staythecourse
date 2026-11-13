@@ -150,8 +150,15 @@ Working today:
   `NON_BILLABLE`), a status, its own reference currency and optional start/end dates; a
   billable model requires a client, and `INTERNAL`/`NON_BILLABLE` are shown as producing
   no revenue. Create/edit through `?editClient=` / `?editProject=`. Only `OWNER` and
-  `ADMIN` write; every member of the workspace reads. No revenue entry or invoice exists
-  yet (M10-02).
+  `ADMIN` write; every member of the workspace reads.
+- Revenue (`/micro-business/revenue`): invoices and explicit credit notes, plus dated
+  payments, refunds and write-offs (all positive magnitudes). Amounts, paid, outstanding
+  and the status (open, partially paid, paid, overdue, written off, credited) are
+  derived on every read from those rows — no status flag can go stale. Overdue starts
+  the day after the due date, compared with the owner's calendar day. Overpayment is
+  refused and the message names the credit-note path; a credit note never exceeds the
+  remaining balance. Recognition is a frozen date + amount snapshot (versioned rules
+  arrive with M15-01), and the monthly summary shows no row for a month without data.
 - Property events (real-estate, « Échéances et obligations »): taxes, insurance,
   maintenance, leases, inspections, loan deadlines and renovation tracked as dated
   reminders — kind, optional calendar date, status (planned, done, cancelled), notes and

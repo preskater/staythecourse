@@ -1,3 +1,4 @@
+import Decimal from "decimal.js";
 import { assertCurrency, type Currency } from "@/lib/money";
 import { getPrisma } from "@/lib/db";
 import type {
@@ -6,6 +7,7 @@ import type {
   ProjectStatus,
   ProjectSummary,
 } from "./domain";
+import type { RevenueDocumentKind, RevenueDocumentRecord } from "./revenue";
 
 /**
  * Micro-business persistence. Every query is scoped to the workspace resolved from the
@@ -288,4 +290,237 @@ export async function setProjectArchived(
   });
 
   return count === 1;
+}
+
+/**
+ * Revenue persistence (M10-02).
+ *
+ * A document, its credit notes and its payments/refunds/write-offs are read together:
+ * every derived figure needs the whole set, and reading it in one query keeps the page
+ * free of N+1 lookups. Every query is workspace-scoped; a foreign identifier is simply
+ * "not found".
+ *
+ * The write paths here do not re-check business rules (overpayment, credit-note
+ * limits): the Server Actions compute the current statement first and refuse before
+ * calling. A `ponytail:` note in the action names the single-user concurrency limit.
+ */
+
+const REVENUE_DOCUMENT_SELECT = {
+  id: true,
+  kind: true,
+  projectId: true,
+  clientId: true,
+  currency: true,
+  amount: true,
+  issuedOn: true,
+  dueOn: true,
+  recognizedOn: true,
+  recognizedAmount: true,
+  notes: true,
+  project: { select: { name: true } },
+  client: { select: { name: true } },
+  creditNoteFor: { select: { id: true, issuedOn: true } },
+  creditedBy: { select: { id: true, amount: true, issuedOn: true } },
+  payments: { select: { id: true, amount: true, paidOn: true } },
+  refunds: { select: { id: true, amount: true, refundedOn: true } },
+  writeOffs: { select: { id: true, amount: true, writtenOffOn: true } },
+} as const;
+
+type RevenueDocumentRow = {
+  id: string;
+  kind: string;
+  projectId: string;
+  clientId: string | null;
+  currency: string;
+  amount: Decimal;
+  issuedOn: Date;
+  dueOn: Date | null;
+  recognizedOn: Date | null;
+  recognizedAmount: Decimal | null;
+  notes: string | null;
+  project: { name: string };
+  client: { name: string } | null;
+  creditNoteFor: { id: string; issuedOn: Date } | null;
+  creditedBy: { id: string; amount: Decimal; issuedOn: Date }[];
+  payments: { id: string; amount: Decimal; paidOn: Date }[];
+  refunds: { id: string; amount: Decimal; refundedOn: Date }[];
+  writeOffs: { id: string; amount: Decimal; writtenOffOn: Date }[];
+};
+
+function toRevenueDocumentRecord(row: RevenueDocumentRow): RevenueDocumentRecord {
+  return {
+    id: row.id,
+    kind: row.kind as RevenueDocumentKind,
+    projectId: row.projectId,
+    projectName: row.project.name,
+    clientId: row.clientId,
+    clientName: row.client?.name ?? null,
+    currency: assertCurrency(row.currency),
+    amount: new Decimal(row.amount.toString()),
+    issuedOn: row.issuedOn,
+    dueOn: row.dueOn,
+    recognizedOn: row.recognizedOn,
+    recognizedAmount:
+      row.recognizedAmount === null ? null : new Decimal(row.recognizedAmount.toString()),
+    notes: row.notes,
+    creditNoteFor: row.creditNoteFor,
+    creditedBy: row.creditedBy.map((note) => ({
+      id: note.id,
+      amount: new Decimal(note.amount.toString()),
+      issuedOn: note.issuedOn,
+    })),
+    payments: row.payments.map((payment) => ({
+      id: payment.id,
+      amount: new Decimal(payment.amount.toString()),
+      paidOn: payment.paidOn,
+    })),
+    refunds: row.refunds.map((refund) => ({
+      id: refund.id,
+      amount: new Decimal(refund.amount.toString()),
+      refundedOn: refund.refundedOn,
+    })),
+    writeOffs: row.writeOffs.map((writeOff) => ({
+      id: writeOff.id,
+      amount: new Decimal(writeOff.amount.toString()),
+      writtenOffOn: writeOff.writtenOffOn,
+    })),
+  };
+}
+
+/** Every document of the workspace, newest issue first. */
+export async function listRevenueDocuments(
+  workspaceId: string,
+): Promise<RevenueDocumentRecord[]> {
+  const rows = await getPrisma().revenueDocument.findMany({
+    where: { workspaceId },
+    select: REVENUE_DOCUMENT_SELECT,
+    orderBy: [{ issuedOn: "desc" }, { createdAt: "desc" }],
+  });
+
+  return rows.map(toRevenueDocumentRecord);
+}
+
+/** One document by identifier, workspace-scoped, with every settling row. */
+export async function findRevenueDocument(
+  workspaceId: string,
+  documentId: string,
+): Promise<RevenueDocumentRecord | null> {
+  const row = await getPrisma().revenueDocument.findFirst({
+    where: { id: documentId, workspaceId },
+    select: REVENUE_DOCUMENT_SELECT,
+  });
+
+  return row ? toRevenueDocumentRecord(row) : null;
+}
+
+export type RevenueDocumentWriteInput = {
+  workspaceId: string;
+  projectId: string;
+  clientId: string | null;
+  creditNoteForId: string | null;
+  kind: RevenueDocumentKind;
+  currency: Currency;
+  amount: Decimal;
+  issuedOn: Date;
+  dueOn: Date | null;
+  recognizedOn: Date | null;
+  recognizedAmount: Decimal | null;
+  notes: string | null;
+};
+
+export async function createRevenueDocument(
+  input: RevenueDocumentWriteInput,
+): Promise<{ id: string }> {
+  return getPrisma().revenueDocument.create({
+    data: {
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      clientId: input.clientId,
+      creditNoteForId: input.creditNoteForId,
+      kind: input.kind,
+      currency: input.currency,
+      amount: input.amount.toFixed(2),
+      issuedOn: input.issuedOn,
+      dueOn: input.dueOn,
+      recognizedOn: input.recognizedOn,
+      recognizedAmount: input.recognizedAmount?.toFixed(2) ?? null,
+      notes: input.notes,
+    },
+    select: { id: true },
+  });
+}
+
+export type RevenueMovementWriteInput =
+  | {
+      type: "PAYMENT";
+      workspaceId: string;
+      documentId: string;
+      amount: Decimal;
+      date: Date;
+      notes: string | null;
+    }
+  | {
+      type: "REFUND";
+      workspaceId: string;
+      documentId: string;
+      amount: Decimal;
+      date: Date;
+      notes: string | null;
+    }
+  | {
+      type: "WRITE_OFF";
+      workspaceId: string;
+      documentId: string;
+      amount: Decimal;
+      date: Date;
+      notes: string | null;
+    };
+
+/**
+ * Records one settlement row on an invoice.
+ *
+ * The three tables share their shape but keep distinct columns (`paidOn`,
+ * `refundedOn`, `writtenOffOn`), so a report can read each movement by its own day
+ * without decoding a type. The caller has already checked the amount against the
+ * statement.
+ */
+export async function createRevenueMovement(
+  input: RevenueMovementWriteInput,
+): Promise<{ id: string }> {
+  // Re-checked here as well as in the action: a write keyed only by a browser-supplied
+  // document id must never reach another workspace's invoice.
+  const document = await getPrisma().revenueDocument.findFirst({
+    where: { id: input.documentId, workspaceId: input.workspaceId },
+    select: { id: true },
+  });
+  if (!document) {
+    throw new Error("Revenue document not found in this workspace.");
+  }
+
+  const shared = {
+    workspaceId: input.workspaceId,
+    documentId: input.documentId,
+    amount: input.amount.toFixed(2),
+    notes: input.notes,
+  };
+
+  const prisma = getPrisma();
+
+  switch (input.type) {
+    case "PAYMENT":
+      return prisma.revenuePayment.create({
+        data: { ...shared, paidOn: input.date },
+        select: { id: true },
+      });
+    case "REFUND":
+      return prisma.revenueRefund.create({
+        data: { ...shared, refundedOn: input.date },
+        select: { id: true },
+      });
+    case "WRITE_OFF":
+      return prisma.revenueWriteOff.create({
+        data: { ...shared, writtenOffOn: input.date },
+        select: { id: true },
+      });
+  }
 }

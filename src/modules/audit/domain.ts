@@ -34,6 +34,12 @@ export const AUDIT_ACTIONS = [
   "transaction.transfer",
   "transaction.reconcile",
   "transaction.salary_book",
+  // Micro-business revenue (M10-02). One code per record family, never an amount.
+  "revenue.invoice",
+  "revenue.credit_note",
+  "revenue.payment",
+  "revenue.refund",
+  "revenue.write_off",
   // Configuration that changes what the dashboard computes.
   "rate.write",
   "module.enable",
@@ -64,6 +70,7 @@ export const AUDIT_ENTITY_TYPES = [
   "USER",
   "TRANSACTION",
   "TRANSFER",
+  "REVENUE_DOCUMENT",
   "SALARY_RATE",
   "MODULE",
   "INTEGRATION",
