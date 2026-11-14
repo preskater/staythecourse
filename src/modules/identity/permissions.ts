@@ -71,6 +71,14 @@ function canManageMembership(actorRole: WorkspaceRole, targetRole: WorkspaceRole
   return MANAGEABLE_ROLES[actorRole]?.includes(targetRole) ?? false;
 }
 
+/**
+ * @returns whether `actorRole` may grant `role`, through an invitation or a role
+ * change. `OWNER` is in nobody's list: ownership is transferred explicitly.
+ */
+export function canGrantRole(actorRole: WorkspaceRole, role: WorkspaceRole): boolean {
+  return GRANTABLE_ROLES[actorRole]?.includes(role) ?? false;
+}
+
 /** @returns whether `actorRole` may remove the membership carrying `targetRole`. */
 export function canRemoveMember(
   actorRole: WorkspaceRole,
@@ -92,5 +100,5 @@ export function canChangeMemberRole(
     return false;
   }
 
-  return GRANTABLE_ROLES[actorRole]?.includes(nextRole) ?? false;
+  return canGrantRole(actorRole, nextRole);
 }

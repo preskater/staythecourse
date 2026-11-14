@@ -8,7 +8,7 @@ import type { NextAuthConfig } from "next-auth";
  * needs to decide whether a request may proceed; the credentials provider and the
  * database lookups live in `src/auth.ts`.
  */
-export const PUBLIC_PATHS = ["/login"] as const;
+export const PUBLIC_PATHS = ["/login", "/invitation"] as const;
 
 /** Health endpoint used by the deployment check, and the Auth.js callbacks. */
 export const PUBLIC_PREFIXES = ["/api/auth"] as const;

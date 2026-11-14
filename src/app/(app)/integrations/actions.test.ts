@@ -92,6 +92,7 @@ beforeEach(() => {
   touchSessionMock.mockReset().mockResolvedValue(undefined);
   findOwnerByIdMock.mockReset().mockResolvedValue(owner);
   listMembershipsMock.mockReset().mockResolvedValue([membership("OWNER")]);
+  // The action uses the stored connection's identifier in the audit entry.
   upsertConnectionMock.mockReset().mockResolvedValue({ id: "connection-1" });
   synchroniseConnectionMock.mockReset().mockResolvedValue({ status: "SYNCHRONISED" });
   redirectMock.mockReset();

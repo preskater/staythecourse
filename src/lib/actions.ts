@@ -15,7 +15,9 @@ export type ActionResult =
   | { status: "invalid"; message: string; fieldErrors: Record<string, string[]> }
   | { status: "error"; message: string };
 
-export function invalidResult(error: z.ZodError): ActionResult {
+export function invalidResult(
+  error: z.ZodError,
+): Extract<ActionResult, { status: "invalid" }> {
   return {
     status: "invalid",
     message: "Certaines valeurs sont invalides. Rien n'a été enregistré.",
@@ -24,7 +26,10 @@ export function invalidResult(error: z.ZodError): ActionResult {
 }
 
 /** A single business rule refusal, reported on the field that caused it. */
-export function rejectedResult(field: string, message: string): ActionResult {
+export function rejectedResult(
+  field: string,
+  message: string,
+): Extract<ActionResult, { status: "invalid" }> {
   return { status: "invalid", message, fieldErrors: { [field]: [message] } };
 }
 
@@ -37,7 +42,10 @@ export function rejectedResult(field: string, message: string): ActionResult {
  * `P2003` take an afternoon to diagnose; the code is safe to print, unlike the row
  * values in the driver's message.
  */
-export function unexpectedResult(context: string, error: unknown): ActionResult {
+export function unexpectedResult(
+  context: string,
+  error: unknown,
+): Extract<ActionResult, { status: "error" }> {
   const code = prismaErrorCode(error);
 
   console.error(

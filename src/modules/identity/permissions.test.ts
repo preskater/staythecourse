@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canChangeMemberRole,
+  canGrantRole,
   canRemoveMember,
   hasPermission,
   PERMISSIONS,
@@ -72,6 +73,31 @@ describe("canRemoveMember", () => {
   it("refuses members and viewers, who hold no member-management permission", () => {
     expect(canRemoveMember("MEMBER", "VIEWER")).toBe(false);
     expect(canRemoveMember("VIEWER", "MEMBER")).toBe(false);
+  });
+});
+
+describe("canGrantRole", () => {
+  it("lets an owner grant every role except owner", () => {
+    expect(canGrantRole("OWNER", "ADMIN")).toBe(true);
+    expect(canGrantRole("OWNER", "MEMBER")).toBe(true);
+    expect(canGrantRole("OWNER", "VIEWER")).toBe(true);
+    expect(canGrantRole("OWNER", "OWNER")).toBe(false);
+  });
+
+  it("lets an admin grant members and viewers, never a peer admin", () => {
+    expect(canGrantRole("ADMIN", "MEMBER")).toBe(true);
+    expect(canGrantRole("ADMIN", "VIEWER")).toBe(true);
+    expect(canGrantRole("ADMIN", "ADMIN")).toBe(false);
+    expect(canGrantRole("ADMIN", "OWNER")).toBe(false);
+  });
+
+  it("refuses members, viewers and unknown roles", () => {
+    for (const role of ["MEMBER", "VIEWER"] as const) {
+      for (const granted of ROLES) {
+        expect(canGrantRole(role, granted)).toBe(false);
+      }
+    }
+    expect(canGrantRole("SUPERUSER" as WorkspaceRole, "VIEWER")).toBe(false);
   });
 });
 
