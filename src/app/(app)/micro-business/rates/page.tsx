@@ -1,5 +1,4 @@
 import type Decimal from "decimal.js";
-import Link from "next/link";
 import {
   Card,
   EmptyState,
