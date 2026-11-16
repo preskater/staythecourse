@@ -353,6 +353,16 @@ asked for: a cascade here would silently change what a property is worth.
   interface: `computePropertyTotals`, the KPI figures and the budget stay cashflow-only.
   Creating or editing an event writes only the event row and never a transaction, so an
   obligation cannot become a duplicate payment.
+- **Property calendar** (`/real-estate/calendar`) reads the same event rows and the
+  cashflow due dates, so the owner sees one month instead of two partial tables. It
+  offers a Monday-first month grid and a chronological list, both filterable by property
+  and status. Events keep their stored status; a cashflow is `DONE` once settled and
+  `OPEN` before, which gives the three calendar statuses (`OPEN`, `DONE`, `CANCELLED`).
+  Grouping uses the stored `DATE` value in UTC, so neither locale nor time zone can move
+  an entry into another day or month: they affect display only. An entry without a date is
+  never placed in a month — it appears in the list under « sans date ». The grid is built
+  by a pure function (`buildCalendarMonth`), so its boundaries, leap years and empty
+  months are tested without a browser.
 
 ## Documented indicator definitions
 

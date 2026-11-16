@@ -25,6 +25,7 @@ const PAGES: { path: string; moduleKey: ModuleKey; load: () => Promise<{ default
   { path: "/budget", moduleKey: "budget", load: () => import("./budget/page") },
   { path: "/budget/import", moduleKey: "budget", load: () => import("./budget/import/page") },
   { path: "/real-estate", moduleKey: "real-estate", load: () => import("./real-estate/page") },
+  { path: "/real-estate/calendar", moduleKey: "real-estate", load: () => import("./real-estate/calendar/page") },
   { path: "/real-estate/[id]", moduleKey: "real-estate", load: () => import("./real-estate/[id]/page") },
   { path: "/micro-business", moduleKey: "micro-business", load: () => import("./micro-business/page") },
   { path: "/integrations", moduleKey: "development", load: () => import("./integrations/page") },
