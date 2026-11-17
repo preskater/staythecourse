@@ -92,19 +92,18 @@ export async function inviteMemberAction(
   const expiresAt = invitationExpiry(now);
   const { token, tokenHash } = createInvitationToken();
 
-  let created;
-  try {
-    created = await createWorkspaceInvitation({
-      workspaceId: user.workspace.id,
-      actorId: user.id,
-      email: parsed.data.email,
-      role: parsed.data.role,
-      tokenHash,
-      expiresAt,
-      now,
-    });
-  } catch (error) {
-    return unexpectedResult("createWorkspaceInvitation", error);
+  const created = await createWorkspaceInvitation({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    email: parsed.data.email,
+    role: parsed.data.role,
+    tokenHash,
+    expiresAt,
+    now,
+  }).catch((error) => unexpectedResult("createWorkspaceInvitation", error));
+
+  if (created.status === "error") {
+    return created;
   }
 
   if (created.status === "forbidden") {
@@ -152,15 +151,14 @@ export async function revokeInvitationAction(values: unknown): Promise<ActionRes
     return rejectedResult("invitationId", "Invitation introuvable.");
   }
 
-  let result;
-  try {
-    result = await revokeWorkspaceInvitation({
-      workspaceId: user.workspace.id,
-      actorId: user.id,
-      invitationId: parsed.data.invitationId,
-    });
-  } catch (error) {
-    return unexpectedResult("revokeWorkspaceInvitation", error);
+  const result = await revokeWorkspaceInvitation({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    invitationId: parsed.data.invitationId,
+  }).catch((error) => unexpectedResult("revokeWorkspaceInvitation", error));
+
+  if (typeof result !== "string") {
+    return result;
   }
 
   if (result === "forbidden") {

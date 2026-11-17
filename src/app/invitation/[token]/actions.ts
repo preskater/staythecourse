@@ -116,15 +116,14 @@ export async function acceptInvitationAction(values: unknown): Promise<ActionRes
       return rejectedResult("password", SIGN_IN_FAILED);
     }
 
-    let accepted;
-    try {
-      accepted = await acceptWorkspaceInvitation({
-        tokenHash,
-        userId: existing.id,
-        userEmail: existing.email,
-      });
-    } catch (error) {
-      return unexpectedResult("acceptWorkspaceInvitation", error);
+    const accepted = await acceptWorkspaceInvitation({
+      tokenHash,
+      userId: existing.id,
+      userEmail: existing.email,
+    }).catch((error) => unexpectedResult("acceptWorkspaceInvitation", error));
+
+    if (accepted.status === "error") {
+      return accepted;
     }
 
     if (accepted.status !== "ok") {
