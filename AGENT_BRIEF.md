@@ -26,12 +26,12 @@ read-only; personal and company data are not mixed.
 
 ```text
 src/
-  app/(app)/         authenticated pages: account, alerts, budget (incl. /budget/import), dashboard, integrations, real-estate
+  app/(app)/         authenticated pages: account, alerts, budget (incl. /budget/import), dashboard, integrations, micro-business, real-estate
   app/api/           Route Handlers: auth callbacks + CSV export (401 JSON, never a redirect)
   app/login/         sign-in page
   components/        shared UI (forms, server-rendered SVG charts, navigation)
   modules/           business rules per module: identity, budget, real-estate,
-                     integrations, alerts, dashboard, audit, catalog
+                     micro-business, integrations, alerts, dashboard, audit, catalog
                      (domain.ts / repository.ts inside each)
   lib/               db, env, money, dates, csv, crypto, auth helpers
   jobs/sync.ts       idempotent synchronisation functions (no scheduler shipped)
@@ -45,7 +45,7 @@ docs/                architecture/overview.md, decisions/
 
 `User` (sole owner) owns `Account`, `Category`, `Transaction`, `Budget`,
 `RecurringEntry`, `Goal`, `SalarySetting`, `SalaryRate`, `WorkDay`, `Property`,
-`IntegrationConnection`, `Alert`, `AlertRule`. Key rules:
+`Client`, `Project`, `IntegrationConnection`, `Alert`, `AlertRule`. Key rules:
 
 - `Transaction.amount` is `Decimal(18, 2)`, signed (negative = outflow); never floats.
 - `Transaction.operationDate` is `DATE`; instants are `timestamptz(3)` UTC.
@@ -86,8 +86,30 @@ docs/                architecture/overview.md, decisions/
   `paymentAmount`/`insuranceAmount`, dates), owned through its property and **never**
   fed into `computePropertyTotals`: financing is the cost of owning, not operating
   cashflow. A missing balance reads unknown, never zero.
+- `CostEntry` is one canonical cost: signed `Decimal(18,2)`, currency, actuality,
+  source identifiers (never a token), inclusive `periodStart`..`periodEnd`, optional
+  dimensions and a `DRAFT`/`FINALIZED` status. `CostAllocation` is a child row that
+  splits it across dimensions; the unallocated remainder is derived. Allocated +
+  unallocated equals the total in cents; finalized entries reject every write.
 - `IntegrationConnection.credentialsCiphertext` holds the AES-256-GCM token; it is
   never returned to the browser.
+- `Client` / `Project` (micro-business, workspace-scoped) carry an explicit
+  `billingModel` enum; `billingBehaviour` marks `FIXED_PRICE`,
+  `TIME_AND_MATERIALS` and `RETAINER` as billable and `INTERNAL` / `NON_BILLABLE` as
+  producing no revenue. A billable project requires a client. `archivedAt` is a
+  reversible stamp: archiving writes no other column, so an archived record keeps
+  everything, and names stay unique per workspace (archived rows included).
+- `RevenueDocument` (invoice or explicit credit note) stores positive magnitudes, an
+  optional `creditNoteForId`, and a frozen recognition snapshot (`recognizedOn` +
+  `recognizedAmount`, set together or not at all). `RevenuePayment` / `RevenueRefund` /
+  `RevenueWriteOff` attach positive, dated rows to an invoice. `statementOf` derives
+  net issued, paid, outstanding, overdue days and a status on every read; no status
+  column exists. Overpayment is refused; a credit note never exceeds the balance.
+- `BillingRate` (unique per client + year + month) and `InternalCostRate` (unique per
+  workspace + year + month) are effective-dated change points. `resolveEffectiveRate`
+  is pure and returns `null` before the first point; saving an existing month upserts.
+  The two are never merged, and internal rows are read only with
+  `read-internal-rates` (owner preset).
 - `ProjectSnapshot` / `IssueSnapshot` / `MilestoneSnapshot` are keyed by
   `(connectionId, externalId)` — that is what makes a sync re-runnable.
 
@@ -222,6 +244,31 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
   (amount XOR transaction link), totals, due dates, notes. Loans (financing): create,
   edit (`?editLoan=`) and delete with a confirmation, totalled per currency and shown
   apart from the operating figures — financing never counts in the property totals.
+- Micro-business (`/micro-business`, module key `micro-business`): clients and projects,
+  both archived rather than deleted. A project carries an explicit billing model
+  (`FIXED_PRICE`, `TIME_AND_MATERIALS`, `RETAINER`, `INTERNAL`, `NON_BILLABLE`), a status
+  (`ACTIVE`/`COMPLETED`), its own currency and optional start/end dates; a billable model
+  requires a client. Create/edit via `?editClient=` / `?editProject=`, archive/restore
+  with one click. Only `OWNER`/`ADMIN` write; every member reads.
+- Revenue (`/micro-business/revenue`): invoices and explicit credit notes, with dated
+  payments, refunds and write-offs. Statuses (open, partially paid, paid, overdue,
+  written off, credited) and every figure are derived on read from the stored rows;
+  overpayment is refused, a credit note is the explicit correction path, and overdue
+  starts the day after the due date in the owner's time zone. Recognition is a frozen
+  `recognizedOn` + `recognizedAmount` snapshot (rules arrive with M15-01). The monthly
+  summary omits a month without data rather than showing zeros.
+- Rate cards (`/micro-business/rates`): effective-dated client billing rates and
+  confidential internal loaded-cost rates, as separate change points (most recent at or
+  before the month; none before the first). Saving a month corrects its point; nothing
+  is deleted and no stored amount is recomputed. Internal rates need
+  `read-internal-rates` (owner only until M18-01); without it the rows are never queried.
+- AI costs (`src/modules/ai-costs`): canonical `CostEntry` (signed exact amount,
+  currency, mandatory actuality, immutable source reference, inclusive period, optional
+  dimensions) and `CostAllocation` splits across project/client/repository/developer/
+  agent/issue/PR/environment/tag dimensions. Allocated plus derived unallocated always
+  equals the entry total in cents; weighted splits use largest remainder; a finalized
+  entry and its allocations are immutable (corrections are new entries). Workspace-
+  scoped; no UI, import, provider sync, exchange rate or profitability math yet.
 - Integrations: read-only GitHub (projects, open issues + PRs, explorer with
   combinable filters validated against present data, an actionable work queue —
   unanswered, old PRs, no milestone/label, blocked, milestones due — computed from
@@ -251,6 +298,10 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
 ## Not implemented (do not assume they exist)
 
 - No scheduler/cron for sync — the function exists, only the manual trigger ships.
+- The `micro-business` module has clients, projects, revenue documents and rate cards:
+  no estimate/version, recurring business expense or business-to-personal transfer yet
+  (M10-04 and later). Revenue records cannot be edited or deleted: a credit note,
+  refund or write-off is the explicit correction path.
 - Properties and cashflow entries cannot be edited or deleted from the interface yet.
   Loans (financing), accounts (rename/retype/archive/restore), categories
   (rename/merge/delete) and recurring series (edit) are managed in the interface

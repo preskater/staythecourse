@@ -1,5 +1,10 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
+import {
+  allocateCents,
+  assertAllocationConservation,
+  toCents,
+} from "@/modules/ai-costs/allocation";
 import type { TransactionRecord, TransactionType } from "@/modules/budget/domain";
 import { computeMonthlyTotals } from "@/modules/budget/totals";
 import {
@@ -192,5 +197,49 @@ describe("invariant: transfer inclusion in monthly totals", () => {
 
     expect(doubleCounted.equals(totals.income)).toBe(false);
     expect(totals.net.isZero()).toBe(true);
+  });
+});
+
+/**
+ * Invariant 7 — cost allocations conserve every cent.
+ *
+ * A weighted split never rounds the total: the leftover cents go to the largest
+ * remainders, and the derived unallocated remainder always closes the identity
+ * `allocated + unallocated === total`. The sign of a credit is preserved.
+ */
+describe("invariant: cost allocation conservation", () => {
+  it("splits every cent with the entry's sign, across random weights", () => {
+    const random = seededRandom(2_026);
+    const ZERO = BigInt(0);
+
+    for (let run = 0; run < CASES; run += 1) {
+      const total = cents(random, -500_000, 500_000);
+      const parts = randomInt(random, 1, 10);
+      const weights = Array.from({ length: parts }, () =>
+        BigInt(randomInt(random, 0, 10)),
+      );
+
+      if (weights.every((weight) => weight === ZERO)) {
+        weights[0] = BigInt(1);
+      }
+
+      const totalCents = toCents(total);
+      const shares = allocateCents(totalCents, weights);
+      const allocated = shares.reduce((sum, share) => sum + share, ZERO);
+      const summary = assertAllocationConservation(totalCents, allocated);
+
+      expect(allocated, `run ${run}`).toBe(totalCents);
+      expect(
+        summary.allocatedCents + summary.unallocatedCents,
+        `run ${run}`,
+      ).toBe(summary.totalCents);
+
+      for (const share of shares) {
+        expect(
+          share === ZERO || (share < ZERO) === total.isNegative(),
+          `run ${run}`,
+        ).toBe(true);
+      }
+    }
   });
 });

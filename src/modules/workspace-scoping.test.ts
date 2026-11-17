@@ -24,9 +24,12 @@ const table = {
 
 const prisma = {
   account: table,
+  exchangeRateSnapshot: table,
   property: table,
   propertyLoan: table,
   propertyValuation: { create: createValuationMock },
+  client: table,
+  project: table,
   alert: table,
   integrationConnection: table,
   issueSnapshot: table,
@@ -38,8 +41,21 @@ vi.mock("@/lib/db", () => ({ getPrisma: () => prisma }));
 
 const { createAccount, findAccount } = await import("./budget/repository");
 const { deleteLoan, findProperty, updateProperty } = await import("./real-estate/repository");
+const {
+  createClient,
+  createProject,
+  findClient,
+  findProject,
+  listClients,
+  listProjects,
+  setClientArchived,
+  updateProject,
+} = await import("./micro-business/repository");
 const { dismissAlert, listAlerts } = await import("./alerts/repository");
 const { findConnectionForSync, listIssues } = await import("./integrations/repository");
+const { findExchangeRateSnapshotById, recordExchangeRate } = await import(
+  "./ai-costs/repository"
+);
 
 const FOREIGN = "ws-someone-else";
 
@@ -54,6 +70,11 @@ beforeEach(() => {
 
 function where(mock: ReturnType<typeof vi.fn>) {
   return (mock.mock.calls[0][0] as { where: unknown }).where;
+}
+
+/** The filter of the most recent query, for tests that issue more than one. */
+function lastWhere(mock: ReturnType<typeof vi.fn>) {
+  return (mock.mock.calls.at(-1)?.[0] as { where: unknown }).where;
 }
 
 describe("budget", () => {
@@ -106,6 +127,70 @@ describe("real-estate", () => {
   });
 });
 
+describe("micro-business", () => {
+  const projectWrite = {
+    name: "Refonte",
+    clientId: null,
+    billingModel: "INTERNAL",
+    status: "ACTIVE",
+    currency: "EUR",
+    startDate: null,
+    endDate: null,
+    notes: null,
+  } as const;
+
+  it("lists only the workspace's clients and projects", async () => {
+    await listClients("ws-1");
+    expect(where(findManyMock)).toEqual({ workspaceId: "ws-1" });
+
+    await listProjects("ws-1");
+    expect(where(findManyMock)).toEqual({ workspaceId: "ws-1" });
+  });
+
+  it("reads a foreign workspace's client or project as not found", async () => {
+    expect(await findClient(FOREIGN, "client-1")).toBeNull();
+    expect(where(findFirstMock)).toEqual({ id: "client-1", workspaceId: FOREIGN });
+
+    expect(await findProject(FOREIGN, "project-1")).toBeNull();
+    expect(lastWhere(findFirstMock)).toEqual({ id: "project-1", workspaceId: FOREIGN });
+  });
+
+  it("writes a client into the given workspace only", async () => {
+    await createClient({
+      workspaceId: "ws-1",
+      name: " Studio ",
+      contactName: null,
+      email: null,
+      notes: null,
+    });
+
+    expect(createMock.mock.calls[0][0]).toMatchObject({
+      data: { workspaceId: "ws-1", name: "Studio" },
+    });
+  });
+
+  it("refuses to archive a foreign client", async () => {
+    expect(await setClientArchived(FOREIGN, "client-1", true)).toBe(false);
+    expect(where(updateManyMock)).toEqual({ id: "client-1", workspaceId: FOREIGN });
+  });
+
+  it("never links a project to a client from another workspace", async () => {
+    // The fake client answers like PostgreSQL: no client row in this workspace.
+    expect(await createProject({ workspaceId: "ws-1", ...projectWrite, clientId: "client-foreign" })).toBeNull();
+    expect(where(findFirstMock)).toEqual({ id: "client-foreign", workspaceId: "ws-1" });
+    expect(createMock).not.toHaveBeenCalled();
+
+    expect(await updateProject(FOREIGN, "project-1", { ...projectWrite, clientId: "client-foreign" })).toBe(false);
+    expect(lastWhere(findFirstMock)).toEqual({ id: "client-foreign", workspaceId: FOREIGN });
+    expect(updateManyMock).not.toHaveBeenCalled();
+  });
+
+  it("scopes a project write by the workspace, archived state included", async () => {
+    expect(await updateProject(FOREIGN, "project-1", projectWrite)).toBe(false);
+    expect(where(updateManyMock)).toEqual({ id: "project-1", workspaceId: FOREIGN });
+  });
+});
+
 describe("alerts", () => {
   it("lists only the workspace's alerts and cannot dismiss a foreign one", async () => {
     await listAlerts("ws-1");
@@ -125,5 +210,38 @@ describe("integrations", () => {
   it("scopes snapshots through their connection", async () => {
     await listIssues("ws-1");
     expect(where(findManyMock)).toMatchObject({ connection: { workspaceId: "ws-1" } });
+  });
+});
+
+describe("ai-costs", () => {
+  it("reads a foreign workspace's exchange rate as not found", async () => {
+    expect(await findExchangeRateSnapshotById(FOREIGN, "rate-1")).toBeNull();
+    expect(where(findFirstMock)).toEqual({ id: "rate-1", workspaceId: FOREIGN });
+  });
+
+  it("writes a rate into the given workspace only", async () => {
+    createMock.mockResolvedValueOnce({
+      id: "rate-1",
+      baseCurrency: "USD",
+      quoteCurrency: "EUR",
+      rate: new Decimal("0.92"),
+      rateDate: new Date("2026-10-28T00:00:00.000Z"),
+      source: { kind: "manual", enteredBy: "user-1", capturedAt: "2026-10-28T12:00:00.000Z" },
+      recordedAt: new Date("2026-10-28T12:00:00.000Z"),
+    });
+
+    await recordExchangeRate({
+      workspaceId: "ws-1",
+      baseCurrency: "USD",
+      quoteCurrency: "EUR",
+      rate: "0.92",
+      rateDate: "2026-10-28",
+      source: { kind: "manual", enteredBy: "user-1" },
+      recordedAt: "2026-10-28T12:00:00.000Z",
+    });
+
+    expect(createMock.mock.calls[0][0]).toMatchObject({
+      data: { workspaceId: "ws-1", baseCurrency: "USD", quoteCurrency: "EUR" },
+    });
   });
 });

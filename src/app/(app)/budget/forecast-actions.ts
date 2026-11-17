@@ -10,6 +10,7 @@ import {
 } from "@/lib/actions";
 import { requireModule } from "@/lib/auth/guard";
 import { recordIdInput } from "@/lib/validation";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { categoryMismatchReason, type CategorySummary } from "@/modules/budget/domain";
 import {
   ALREADY_CONFIRMED_MESSAGE,
@@ -55,7 +56,7 @@ import { resolveTransactionInput } from "@/modules/budget/transactions";
  * would land in the wrong column the day it is confirmed.
  */
 export async function createRecurringEntryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recurringEntryInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -112,7 +113,7 @@ export async function createRecurringEntryAction(values: unknown): Promise<Actio
  * computed under a rule that no longer exists.
  */
 export async function updateRecurringEntryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recurringEntryUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -194,7 +195,7 @@ export async function updateRecurringEntryAction(values: unknown): Promise<Actio
  * Pending occurrences, on the other hand, are the series' own future and go with it.
  */
 export async function deleteRecurringEntryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -234,7 +235,7 @@ export async function deleteRecurringEntryAction(values: unknown): Promise<Actio
  * (account, reference) instead of booking the line twice.
  */
 export async function confirmRecurringOccurrenceAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -288,6 +289,16 @@ export async function confirmRecurringOccurrenceAction(values: unknown): Promise
       externalRef: forecastOccurrenceRef(occurrence.id),
     });
 
+    await recordAuditEventSafely({
+      workspaceId: user.workspace.id,
+      actorId: user.id,
+      action: "transaction.create",
+      entityType: "TRANSACTION",
+      entityId: transaction.id,
+      outcome: "SUCCESS",
+      metadata: { type: entry.type, currency: resolved.account.currency, source: "forecast" },
+    });
+
     const decided = await decideRecurringOccurrence(user.workspace.id, occurrence.id, {
       status: "CONFIRMED",
       transactionId: transaction.id,
@@ -320,7 +331,7 @@ async function decideOccurrence(
   values: unknown,
   context: string,
 ): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {

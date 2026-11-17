@@ -14,6 +14,7 @@ import {
   parseMonthKey,
   shiftMonthKey,
   toDateOnlyString,
+  todayDateOnly,
   yearRange,
 } from "./dates";
 
@@ -225,5 +226,20 @@ describe("yearRange", () => {
 
   it("validates the year through the month bounds", () => {
     expect(() => yearRange(1969)).toThrow(RangeError);
+  });
+});
+
+describe("todayDateOnly", () => {
+  it("uses the owner's calendar day, not the UTC day", () => {
+    const lateEvening = new Date("2026-11-10T23:30:00Z");
+
+    expect(toDateOnlyString(todayDateOnly("Europe/Paris", lateEvening))).toBe("2026-11-11");
+    expect(toDateOnlyString(todayDateOnly("UTC", lateEvening))).toBe("2026-11-10");
+  });
+
+  it("crosses the year boundary in a negative-offset zone", () => {
+    const newYear = new Date("2026-01-01T00:30:00Z");
+
+    expect(toDateOnlyString(todayDateOnly("America/New_York", newYear))).toBe("2025-12-31");
   });
 });

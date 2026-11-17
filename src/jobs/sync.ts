@@ -8,6 +8,7 @@ import { createGitHubAdapter } from "@/modules/integrations/github";
 import { createGitLabAdapter } from "@/modules/integrations/gitlab";
 import { usableValidators } from "@/modules/integrations/cache";
 import { createRetryingFetch, type RetryPolicy } from "@/modules/integrations/retry";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import {
   findConnectionForSync,
   finishSyncRun,
@@ -81,6 +82,11 @@ export type SyncRunResult =
     };
 
 export type SyncDependencies = {
+  /**
+   * The signed-in user when a manual run triggered this synchronisation. `null` or
+   * absent means a scheduler: the audit entry then has no actor.
+   */
+  actorId?: string | null;
   /** Injected by tests so that no test reaches the network. */
   fetchImpl?: typeof fetch;
   /** Retry policy override, injected by tests; production uses the default. */
@@ -99,6 +105,15 @@ export async function synchroniseConnection(
   const connection = await findConnectionForSync(workspaceId, connectionId);
 
   if (!connection) {
+    await recordAuditEventSafely({
+      workspaceId,
+      actorId: dependencies.actorId ?? null,
+      action: "integration.sync",
+      entityType: "INTEGRATION",
+      entityId: connectionId,
+      outcome: "REFUSED",
+      metadata: { code: "NOT_FOUND" },
+    });
     return {
       connectionId,
       provider: "GITHUB",
@@ -109,6 +124,15 @@ export async function synchroniseConnection(
 
   if (!connection.token) {
     // An unreadable or absent token is a real state, not an error to hide.
+    await recordAuditEventSafely({
+      workspaceId,
+      actorId: dependencies.actorId ?? null,
+      action: "integration.sync",
+      entityType: "INTEGRATION",
+      entityId: connection.id,
+      outcome: "REFUSED",
+      metadata: { code: "NO_TOKEN", provider: connection.provider },
+    });
     return {
       connectionId,
       provider: connection.provider,
@@ -274,6 +298,25 @@ export async function synchroniseConnection(
       retries: retryingFetch.retries(),
     });
 
+    await recordAuditEventSafely({
+      workspaceId,
+      actorId: dependencies.actorId ?? null,
+      action: "integration.sync",
+      entityType: "INTEGRATION",
+      entityId: connection.id,
+      outcome: "SUCCESS",
+      metadata: {
+        provider: connection.provider,
+        status,
+        fetched,
+        created,
+        updated,
+        skipped,
+        failed,
+        retries: retryingFetch.retries(),
+      },
+    });
+
     return {
       connectionId: connection.id,
       provider: connection.provider,
@@ -305,6 +348,17 @@ export async function synchroniseConnection(
       failed: 0,
       retries: retryingFetch.retries(),
       errorSummary: safeMessage,
+    });
+
+    await recordAuditEventSafely({
+      workspaceId,
+      actorId: dependencies.actorId ?? null,
+      action: "integration.sync",
+      entityType: "INTEGRATION",
+      entityId: connection.id,
+      outcome: "FAILED",
+      // The run history keeps the full safe message; the trail keeps its code only.
+      metadata: { provider: connection.provider, code: safeMessage.split(" ")[0] },
     });
 
     return {

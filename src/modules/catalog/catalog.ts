@@ -57,7 +57,12 @@ export const MODULE_CATALOG: Record<ModuleKey, ModuleDefinition> = {
   },
   "ai-costs": { label: "Coûts IA", requires: [], config: noConfig },
   agents: { label: "Agents", requires: [], config: noConfig },
-  "micro-business": { label: "Micro-entreprise", requires: [], config: noConfig },
+  "micro-business": {
+    label: "Micro-entreprise",
+    requires: [],
+    nav: { href: "/micro-business", label: "Micro-entreprise" },
+    config: noConfig,
+  },
   // Crosses rents, charges and the ledger: meaningless without both.
   profitability: { label: "Rentabilité", requires: ["budget", "real-estate"], config: noConfig },
   automation: { label: "Automatisation", requires: [], config: noConfig },

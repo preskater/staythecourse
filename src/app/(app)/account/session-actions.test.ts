@@ -12,6 +12,7 @@ const requireUserMock = vi.fn();
 const revokeSessionMock = vi.fn();
 const revokeOtherSessionsMock = vi.fn();
 const signOutMock = vi.fn();
+const recordAuditEventSafelyMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({ requireUser: () => requireUserMock() }));
 vi.mock("@/modules/identity/sessions", () => ({
@@ -19,6 +20,9 @@ vi.mock("@/modules/identity/sessions", () => ({
   revokeOtherSessions: (...args: unknown[]) => revokeOtherSessionsMock(...args),
 }));
 vi.mock("@/auth", () => ({ signOut: (...args: unknown[]) => signOutMock(...args) }));
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditEventSafelyMock(...args),
+}));
 
 const { revokeOtherSessionsAction, revokeSessionAction } = await import("./session-actions");
 
@@ -27,6 +31,7 @@ const user = {
   email: "owner@example.test",
   name: null as string | null,
   sessionId: "session-current",
+  workspace: { id: "ws-owner-1", name: "Personnel", kind: "PERSONAL", role: "OWNER", modules: [] },
 };
 
 /** No response ever carries a token, a JWT or a session identifier. */
@@ -40,6 +45,7 @@ describe("revokeSessionAction", () => {
     revokeSessionMock.mockReset().mockResolvedValue(true);
     revokeOtherSessionsMock.mockReset();
     signOutMock.mockReset().mockResolvedValue(undefined);
+    recordAuditEventSafelyMock.mockReset();
   });
 
   it("revokes one session, scoped to the signed-in owner", async () => {
@@ -48,6 +54,14 @@ describe("revokeSessionAction", () => {
     expect(result).toEqual({ status: "ok", message: "Session révoquée." });
     expect(revokeSessionMock).toHaveBeenCalledWith(user.id, "session-other");
     expect(signOutMock).not.toHaveBeenCalled();
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "auth.session_revoke",
+        entityType: "SESSION",
+        entityId: "session-other",
+        metadata: { scope: "ONE" },
+      }),
+    );
     expectNoTokenMaterial(result);
   });
 
@@ -63,6 +77,8 @@ describe("revokeSessionAction", () => {
     });
     // The query is narrowed by owner, so a foreign row is never even considered.
     expect(revokeSessionMock).toHaveBeenCalledWith(user.id, "someone-elses-session");
+    // A failed revocation writes nothing: no row changed.
+    expect(recordAuditEventSafelyMock).not.toHaveBeenCalled();
     expectNoTokenMaterial(result);
   });
 
@@ -110,6 +126,7 @@ describe("revokeOtherSessionsAction", () => {
     revokeSessionMock.mockReset();
     revokeOtherSessionsMock.mockReset().mockResolvedValue(2);
     signOutMock.mockReset();
+    recordAuditEventSafelyMock.mockReset();
   });
 
   it("keeps the current session and revokes the others", async () => {
@@ -117,6 +134,12 @@ describe("revokeOtherSessionsAction", () => {
 
     expect(revokeOtherSessionsMock).toHaveBeenCalledWith(user.id, user.sessionId);
     expect(result).toEqual({ status: "ok", message: "2 sessions révoquées." });
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "auth.session_revoke",
+        metadata: { scope: "OTHERS", count: 2 },
+      }),
+    );
     expectNoTokenMaterial(result);
   });
 

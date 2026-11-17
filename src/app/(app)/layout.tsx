@@ -2,6 +2,7 @@ import Link from "next/link";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { MainNav, MobileNav, type NavLink } from "@/components/main-nav";
 import { SearchForm } from "@/components/search-form";
+import { UtilityNav } from "@/components/utility-nav";
 import { requireUser } from "@/lib/auth/guard";
 import { moduleNavLinks } from "@/modules/catalog/catalog";
 import { signOutAction } from "../login/actions";
@@ -29,9 +30,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // The brand is the link home: listing "Tableau de bord" again in the links made the
   // header read as two competing entry points.
-  const links: NavLink[] = [
+  //
+  // The module row must not grow with the catalog: the entries every workspace has
+  // (journal, module settings, account) live in their own `UtilityNav`.
+  const moduleLinks: NavLink[] = [
     ...moduleNavLinks(user.workspace.modules),
     { href: "/alerts", label: "Alertes" },
+  ];
+  const utilityLinks: NavLink[] = [
+    { href: "/audit", label: "Journal" },
     { href: "/modules", label: "Modules" },
     { href: "/account", label: "Compte" },
   ];
@@ -64,8 +71,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
             <div className="hidden items-center gap-3 lg:flex">{accountControls}</div>
 
-            <MobileNav links={links}>
-              {/* Small screens: the account controls live in the burger menu. */}
+            <MobileNav links={moduleLinks}>
+              {/* Small screens: the utility links and the account controls live in the
+                  burger menu, below the module links. */}
+              <UtilityNav
+                links={utilityLinks}
+                className="flex flex-col gap-1 border-t border-zinc-200 pt-3 dark:border-zinc-800"
+              />
               <div className="flex items-center justify-between gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
                 <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
                   {user.email}
@@ -75,7 +87,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </MobileNav>
           </div>
 
-          <MainNav links={links} className="mt-1" />
+          {/* Primary navigation on the left, always-present entries on the right: one
+              row that stays short as modules are added. */}
+          <div className="mt-1 hidden items-center justify-between gap-2 lg:flex">
+            <MainNav links={moduleLinks} />
+            <UtilityNav
+              links={utilityLinks}
+              className="flex flex-wrap items-center gap-1 border-l border-zinc-200 pl-2 dark:border-zinc-800"
+            />
+          </div>
         </div>
       </header>
 

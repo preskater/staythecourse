@@ -1,18 +1,13 @@
 import Decimal from "decimal.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const requireApiUserMock = vi.fn();
+const requireApiAccessMock = vi.fn();
 const listTransactionsMock = vi.fn();
 const listPropertiesMock = vi.fn();
 const recordAuditEventMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({
-  requireApiUser: () => requireApiUserMock(),
-  unauthorizedResponse: () =>
-    new Response(JSON.stringify({ error: "authentication_required" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    }),
+  requireApiAccess: (...args: unknown[]) => requireApiAccessMock(...args),
   moduleUnavailableResponse: () =>
     Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } }),
 }));
@@ -45,7 +40,7 @@ const OWNER = {
   id: "owner-1",
   email: "owner@example.test",
   name: null,
-  workspace: { id: "ws-owner-1", modules: ["budget", "real-estate"] },
+  workspace: { id: "ws-owner-1", role: "OWNER", modules: ["budget", "real-estate"] },
 };
 
 const EXPENSE = {
@@ -69,7 +64,7 @@ const EXPENSE = {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(Date.UTC(2026, 9, 6, 12, 0)));
-  requireApiUserMock.mockReset().mockResolvedValue(OWNER);
+  requireApiAccessMock.mockReset().mockResolvedValue(OWNER);
   listTransactionsMock.mockReset().mockResolvedValue([EXPENSE]);
   listPropertiesMock.mockReset().mockResolvedValue([]);
   recordAuditEventMock.mockReset().mockResolvedValue(undefined);
@@ -81,7 +76,9 @@ afterEach(() => {
 
 describe("GET /api/export", () => {
   it("refuses an unauthenticated request and reads nothing", async () => {
-    requireApiUserMock.mockResolvedValue(null);
+    requireApiAccessMock.mockResolvedValue(
+      Response.json({ error: "authentication_required" }, { status: 401 }),
+    );
 
     const response = await GET(new Request("http://test.local/api/export?entity=transactions"));
 
@@ -133,7 +130,7 @@ describe("GET /api/export", () => {
   });
 
   it("keeps each entity's module gate", async () => {
-    requireApiUserMock.mockResolvedValue({
+    requireApiAccessMock.mockResolvedValue({
       ...OWNER,
       workspace: { ...OWNER.workspace, modules: ["budget"] },
     });

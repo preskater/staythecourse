@@ -12,8 +12,12 @@ const deleteRecurringEntryMock = vi.fn();
 const createTransactionMock = vi.fn();
 const decideRecurringOccurrenceMock = vi.fn();
 const revalidatePathMock = vi.fn();
+const recordAuditEventSafelyMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({ requireModule: (key: string) => requireUserMock(key) }));
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditEventSafelyMock(...args),
+}));
 vi.mock("@/modules/budget/repository", () => ({
   findAccount: (...args: unknown[]) => findAccountMock(...args),
   findCategory: (...args: unknown[]) => findCategoryMock(...args),
@@ -102,6 +106,7 @@ beforeEach(() => {
   createTransactionMock.mockReset().mockResolvedValue({ id: "tx-1" });
   decideRecurringOccurrenceMock.mockReset().mockResolvedValue(true);
   revalidatePathMock.mockReset();
+  recordAuditEventSafelyMock.mockReset();
 });
 
 describe("confirmRecurringOccurrenceAction", () => {
@@ -143,6 +148,16 @@ describe("confirmRecurringOccurrenceAction", () => {
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/budget");
     expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard");
+
+    const [audit] = recordAuditEventSafelyMock.mock.calls[0] as [Record<string, unknown>];
+    expect(audit).toMatchObject({
+      action: "transaction.create",
+      entityType: "TRANSACTION",
+      entityId: "tx-1",
+      metadata: { type: "EXPENSE", currency: "EUR", source: "forecast" },
+    });
+    expect(JSON.stringify(audit)).not.toContain("Loyer");
+    expect(JSON.stringify(audit)).not.toContain("950");
   });
 
   it("refuses a category of the wrong kind, without writing anything", async () => {

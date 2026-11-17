@@ -9,6 +9,7 @@ import {
 } from "@/lib/actions";
 import { requireUser } from "@/lib/auth/guard";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { passwordChangeSchema } from "@/modules/identity/domain";
 import { findOwnerById, updateOwnerPassword } from "@/modules/identity/repository";
 
@@ -42,6 +43,15 @@ export async function changePasswordAction(values: unknown): Promise<ActionResul
   }
 
   if (!(await verifyPassword(parsed.data.currentPassword, owner.passwordHash))) {
+    await recordAuditEventSafely({
+      workspaceId: user.workspace.id,
+      actorId: user.id,
+      action: "auth.password_change_refused",
+      entityType: "USER",
+      entityId: user.id,
+      outcome: "REFUSED",
+      metadata: { code: "INVALID_CURRENT_PASSWORD" },
+    });
     return rejectedResult("currentPassword", "Mot de passe actuel incorrect.");
   }
 
@@ -56,11 +66,38 @@ export async function changePasswordAction(values: unknown): Promise<ActionResul
 
   try {
     if (!(await updateOwnerPassword(user.id, passwordHash))) {
+      await recordAuditEventSafely({
+        workspaceId: user.workspace.id,
+        actorId: user.id,
+        action: "auth.password_change_refused",
+        entityType: "USER",
+        entityId: user.id,
+        outcome: "REFUSED",
+        metadata: { code: "OWNER_NOT_FOUND" },
+      });
       return rejectedResult("currentPassword", SESSION_MESSAGE);
     }
   } catch (error) {
+    await recordAuditEventSafely({
+      workspaceId: user.workspace.id,
+      actorId: user.id,
+      action: "auth.password_change",
+      entityType: "USER",
+      entityId: user.id,
+      outcome: "FAILED",
+      metadata: { code: "WRITE_FAILED" },
+    });
     return unexpectedResult("changePassword", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "auth.password_change",
+    entityType: "USER",
+    entityId: user.id,
+    outcome: "SUCCESS",
+  });
 
   // Deliberately outside the blocks above: `signOut` signals success by throwing a
   // redirect, and a surrounding catch would turn a stored change into an error

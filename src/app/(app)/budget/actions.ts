@@ -10,7 +10,9 @@ import {
 } from "@/lib/actions";
 import { requireModule } from "@/lib/auth/guard";
 import { formatMonthLabel, monthRange, parseMonthKey, shiftMonthKey } from "@/lib/dates";
+import type { Currency } from "@/lib/money";
 import { recordIdInput } from "@/lib/validation";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import {
   accountArchiveSchema,
   accountInputSchema,
@@ -100,7 +102,7 @@ import { runExpenseSimulation } from "@/modules/budget/simulation-service";
  */
 
 export async function createAccountAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = accountInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -124,7 +126,7 @@ export async function createAccountAction(values: unknown): Promise<ActionResult
 }
 
 export async function createCategoryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = categoryInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -146,7 +148,7 @@ export async function createCategoryAction(values: unknown): Promise<ActionResul
 }
 
 export async function createTransactionAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = transactionFormSchema.safeParse(values);
   if (!parsed.success) {
@@ -160,8 +162,9 @@ export async function createTransactionAction(values: unknown): Promise<ActionRe
     return resolved.result;
   }
 
+  let transactionId: string;
   try {
-    await createTransaction({
+    const created = await createTransaction({
       workspaceId: user.workspace.id,
       accountId: resolved.account.id,
       categoryId: input.categoryId,
@@ -175,9 +178,20 @@ export async function createTransactionAction(values: unknown): Promise<ActionRe
       // has no source, so the uniqueness rule never blocks it.
       externalRef: null,
     });
+    transactionId = created.id;
   } catch (error) {
     return unexpectedResult("createTransaction", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.create",
+    entityType: "TRANSACTION",
+    entityId: transactionId,
+    outcome: "SUCCESS",
+    metadata: { type: input.type, currency: resolved.account.currency },
+  });
 
   revalidatePath("/budget");
   revalidatePath("/dashboard");
@@ -196,7 +210,7 @@ export type ExpenseSimulationActionResult =
 export async function simulateExpenseAction(
   values: unknown,
 ): Promise<ExpenseSimulationActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "read");
   const parsed = expenseSimulationSchema.safeParse(values);
   if (!parsed.success) {
     return invalidResult(parsed.error) as ExpenseSimulationActionResult;
@@ -233,7 +247,7 @@ export async function simulateExpenseAction(
  * of a correction nobody asked to recreate.
  */
 export async function updateTransactionAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = transactionUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -284,6 +298,16 @@ export async function updateTransactionAction(values: unknown): Promise<ActionRe
     return unexpectedResult("updateTransaction", error);
   }
 
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.update",
+    entityType: "TRANSACTION",
+    entityId: input.id,
+    outcome: "SUCCESS",
+    metadata: { type: input.type, currency: resolved.account.currency },
+  });
+
   revalidatePath("/budget");
   revalidatePath("/dashboard");
   return { status: "ok" };
@@ -299,7 +323,7 @@ export async function updateTransactionAction(values: unknown): Promise<ActionRe
  * owner can no longer see. Naming the property is more useful than a crash later.
  */
 export async function deleteTransactionAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -325,6 +349,16 @@ export async function deleteTransactionAction(values: unknown): Promise<ActionRe
   } catch (error) {
     return unexpectedResult("deleteTransaction", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.delete",
+    entityType: "TRANSACTION",
+    entityId: parsed.data.id,
+    outcome: "SUCCESS",
+    metadata: { grouped },
+  });
 
   revalidatePath("/budget");
   revalidatePath("/dashboard");
@@ -373,7 +407,7 @@ async function resolveBudgetInput(
 }
 
 export async function createBudgetAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = budgetInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -410,7 +444,7 @@ export async function createBudgetAction(values: unknown): Promise<ActionResult>
 
 /** Edits one monthly budget in place; same rules as the creation. */
 export async function updateBudgetAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = budgetUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -453,7 +487,7 @@ export async function updateBudgetAction(values: unknown): Promise<ActionResult>
 
 /** Removes one monthly budget. The two-step confirmation lives in the client component. */
 export async function deleteBudgetAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -483,7 +517,7 @@ export async function deleteBudgetAction(values: unknown): Promise<ActionResult>
  * `salaryEquivalents`).
  */
 export async function saveSalarySettingAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = salarySettingInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -492,6 +526,7 @@ export async function saveSalarySettingAction(values: unknown): Promise<ActionRe
 
   const { year, month } = parsed.data.month;
 
+  let wroteRate = false;
   try {
     const rates = await listSalaryRates(user.workspace.id);
     const current = resolveSalaryRate(rates, year, month);
@@ -503,6 +538,7 @@ export async function saveSalarySettingAction(values: unknown): Promise<ActionRe
         month,
         hourlyRate: parsed.data.hourlyRate,
       });
+      wroteRate = true;
     }
 
     await upsertSalarySetting({
@@ -512,6 +548,18 @@ export async function saveSalarySettingAction(values: unknown): Promise<ActionRe
     });
   } catch (error) {
     return unexpectedResult("saveSalarySetting", error);
+  }
+
+  if (wroteRate) {
+    await recordAuditEventSafely({
+      workspaceId: user.workspace.id,
+      actorId: user.id,
+      action: "rate.write",
+      entityType: "SALARY_RATE",
+      entityId: `${year}-${String(month).padStart(2, "0")}`,
+      outcome: "SUCCESS",
+      metadata: { year, month, currency: parsed.data.currency },
+    });
   }
 
   revalidatePath("/budget");
@@ -528,7 +576,7 @@ export async function saveSalarySettingAction(values: unknown): Promise<ActionRe
  * two rows.
  */
 export async function cycleWorkDayAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = workDayInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -588,7 +636,7 @@ export async function cycleWorkDayAction(values: unknown): Promise<ActionResult>
 
 /** Half-hour adjustment of one planned or worked day. */
 export async function adjustWorkDayHoursAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = workDayHoursInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -631,7 +679,7 @@ export async function adjustWorkDayHoursAction(values: unknown): Promise<ActionR
  * show the recorded entry instead of the button.
  */
 export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = salaryBookingInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -640,6 +688,8 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
 
   const { month, accountId, date } = parsed.data;
 
+  let transactionId: string;
+  let salaryCurrency: Currency;
   try {
     const [setting, account, rates] = await Promise.all([
       findSalarySetting(user.workspace.id),
@@ -669,6 +719,7 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
         `Le salaire est en ${setting.currency} : choisissez un compte dans cette devise, aucune conversion n'est faite.`,
       );
     }
+    salaryCurrency = account.currency;
 
     const reference = salaryBookingRef(month.year, month.month);
     const existing = await findTransactionByExternalRef(user.workspace.id, reference);
@@ -693,7 +744,7 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
       kind: "INCOME",
     });
 
-    await createTransaction({
+    const created = await createTransaction({
       workspaceId: user.workspace.id,
       accountId: account.id,
       categoryId: category.id,
@@ -707,6 +758,7 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
       notes: null,
       externalRef: reference,
     });
+    transactionId = created.id;
   } catch (error) {
     // The unique index is the race guard for two clicks crossing between the pre-check
     // and the write; it answers with the same message as the pre-check.
@@ -716,6 +768,19 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
 
     return unexpectedResult("bookSalary", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.salary_book",
+    entityType: "TRANSACTION",
+    entityId: transactionId,
+    outcome: "SUCCESS",
+    metadata: {
+      month: `${month.year}-${String(month.month).padStart(2, "0")}`,
+      currency: salaryCurrency,
+    },
+  });
 
   revalidatePath("/budget");
   revalidatePath("/dashboard");
@@ -731,7 +796,7 @@ export async function bookSalaryAction(values: unknown): Promise<ActionResult> {
  * archived account can still be renamed — restoring it is a separate tick.
  */
 export async function updateAccountAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = accountUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -786,7 +851,7 @@ export async function updateAccountAction(values: unknown): Promise<ActionResult
  * clears the stamp.
  */
 export async function setAccountArchivedAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = accountArchiveSchema.safeParse(values);
   if (!parsed.success) {
@@ -820,7 +885,7 @@ export async function setAccountArchivedAction(values: unknown): Promise<ActionR
  * past, so the action refuses and points at merging instead.
  */
 export async function updateCategoryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = categoryUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -877,7 +942,7 @@ export async function updateCategoryAction(values: unknown): Promise<ActionResul
  * the wrong side of every report.
  */
 export async function mergeCategoriesAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = categoryMergeSchema.safeParse(values);
   if (!parsed.success) {
@@ -949,7 +1014,7 @@ export async function mergeCategoriesAction(values: unknown): Promise<ActionResu
  * (their amounts stay), and the category's budgets are deleted with it.
  */
 export async function deleteCategoryAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -980,7 +1045,7 @@ export async function deleteCategoryAction(values: unknown): Promise<ActionResul
  * account statements.
  */
 export async function createTransferAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = transferInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -989,6 +1054,8 @@ export async function createTransferAction(values: unknown): Promise<ActionResul
 
   const input = parsed.data;
 
+  let transfer: { groupId: string; transactionIds: string[] };
+  let currency: Currency;
   try {
     const [from, to] = await Promise.all([
       findAccount(user.workspace.id, input.fromAccountId),
@@ -1013,11 +1080,12 @@ export async function createTransferAction(values: unknown): Promise<ActionResul
       ? { source: input.label, destination: input.label }
       : defaultTransferLabels(from.name, to.name);
 
-    await createTransferGroup({
+    currency = from.currency;
+    transfer = await createTransferGroup({
       workspaceId: user.workspace.id,
       fromAccountId: from.id,
       toAccountId: to.id,
-      currency: from.currency,
+      currency,
       amount: input.amount,
       operationDate: input.operationDate,
       sourceLabel: labels.source,
@@ -1027,6 +1095,16 @@ export async function createTransferAction(values: unknown): Promise<ActionResul
   } catch (error) {
     return unexpectedResult("createTransfer", error);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.transfer",
+    entityType: "TRANSFER",
+    entityId: transfer.groupId,
+    outcome: "SUCCESS",
+    metadata: { currency, legs: transfer.transactionIds.length },
+  });
 
   revalidatePath("/budget");
   revalidatePath("/dashboard");
@@ -1045,7 +1123,7 @@ export async function createTransferAction(values: unknown): Promise<ActionResul
  * tickable like any other row.
  */
 export async function setTransactionReconciledAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = reconciliationInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -1066,6 +1144,16 @@ export async function setTransactionReconciledAction(values: unknown): Promise<A
     return unexpectedResult("setTransactionReconciled", error);
   }
 
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "transaction.reconcile",
+    entityType: "TRANSACTION",
+    entityId: parsed.data.id,
+    outcome: "SUCCESS",
+    metadata: { reconciled: parsed.data.reconciled },
+  });
+
   revalidatePath("/budget");
   return { status: "ok" };
 }
@@ -1078,7 +1166,7 @@ export async function setTransactionReconciledAction(values: unknown): Promise<A
  * source month is a plain answer, not an error.
  */
 export async function copyBudgetsAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = budgetCopySchema.safeParse(values);
   if (!parsed.success) {

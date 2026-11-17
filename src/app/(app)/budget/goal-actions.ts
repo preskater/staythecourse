@@ -82,7 +82,7 @@ async function resolveGoalInput(
 
 /** Creates one goal. Whatever it does not link to, it records as "no account". */
 export async function createGoalAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = goalInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -106,7 +106,7 @@ export async function createGoalAction(values: unknown): Promise<ActionResult> {
 
 /** Replaces the editable fields of one goal. */
 export async function updateGoalAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = goalUpdateSchema.safeParse(values);
   if (!parsed.success) {
@@ -135,7 +135,7 @@ export async function updateGoalAction(values: unknown): Promise<ActionResult> {
 
 /** Removes one goal. The two-step confirmation lives in the client component. */
 export async function deleteGoalAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {
@@ -165,7 +165,7 @@ export async function deleteGoalAction(values: unknown): Promise<ActionResult> {
  * exactly what was logged.
  */
 export async function addGoalContributionAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = goalContributionInputSchema.safeParse(values);
   if (!parsed.success) {
@@ -199,7 +199,7 @@ export async function addGoalContributionAction(values: unknown): Promise<Action
 
 /** Removes one logged contribution; the goal's progress moves back accordingly. */
 export async function deleteGoalContributionAction(values: unknown): Promise<ActionResult> {
-  const user = await requireModule("budget");
+  const user = await requireModule("budget", "write");
 
   const parsed = recordIdInput.safeParse(values);
   if (!parsed.success) {

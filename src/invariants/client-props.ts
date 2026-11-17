@@ -73,9 +73,18 @@ export type ClientModules = {
   "src/app/(app)/budget/transfer-form.tsx": typeof import("@/app/(app)/budget/transfer-form");
   "src/app/(app)/budget/work-calendar.tsx": typeof import("@/app/(app)/budget/work-calendar");
   "src/app/(app)/integrations/issue-filters-form.tsx": typeof import("@/app/(app)/integrations/issue-filters-form");
+  "src/app/(app)/micro-business/archive-toggle.tsx": typeof import("@/app/(app)/micro-business/archive-toggle");
+  "src/app/(app)/micro-business/client-form.tsx": typeof import("@/app/(app)/micro-business/client-form");
+  "src/app/(app)/micro-business/project-form.tsx": typeof import("@/app/(app)/micro-business/project-form");
+  "src/app/(app)/micro-business/revenue/revenue-form.tsx": typeof import("@/app/(app)/micro-business/revenue/revenue-form");
+  "src/app/(app)/micro-business/revenue/revenue-movement-form.tsx": typeof import("@/app/(app)/micro-business/revenue/revenue-movement-form");
+  "src/app/(app)/micro-business/rates/billing-rate-form.tsx": typeof import("@/app/(app)/micro-business/rates/billing-rate-form");
+  "src/app/(app)/micro-business/rates/internal-rate-form.tsx": typeof import("@/app/(app)/micro-business/rates/internal-rate-form");
   "src/app/(app)/modules/module-toggle.tsx": typeof import("@/app/(app)/modules/module-toggle");
   "src/app/(app)/real-estate/cashflow-form.tsx": typeof import("@/app/(app)/real-estate/cashflow-form");
+  "src/app/(app)/real-estate/delete-event-button.tsx": typeof import("@/app/(app)/real-estate/delete-event-button");
   "src/app/(app)/real-estate/delete-loan-button.tsx": typeof import("@/app/(app)/real-estate/delete-loan-button");
+  "src/app/(app)/real-estate/event-form.tsx": typeof import("@/app/(app)/real-estate/event-form");
   "src/app/(app)/real-estate/loan-form.tsx": typeof import("@/app/(app)/real-estate/loan-form");
   "src/app/(app)/real-estate/property-form.tsx": typeof import("@/app/(app)/real-estate/property-form");
   "src/app/(app)/real-estate/remove-property-button.tsx": typeof import("@/app/(app)/real-estate/remove-property-button");
@@ -85,6 +94,7 @@ export type ClientModules = {
   "src/components/keyboard-shortcuts.tsx": typeof import("@/components/keyboard-shortcuts");
   "src/components/main-nav.tsx": typeof import("@/components/main-nav");
   "src/components/ui/chart.tsx": typeof import("@/components/ui/chart");
+  "src/components/utility-nav.tsx": typeof import("@/components/utility-nav");
 };
 
 type Offenders = {

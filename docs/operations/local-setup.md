@@ -113,7 +113,8 @@ Optional, still with fictitious data: `npm run lint`, `npm run typecheck` and
 | `npm run db:seed` | Create or refresh the owner, personal workspace and initial modules |
 | `npm run db:verify-seed` | Verify the seed output on a fresh or throwaway database |
 | `npm run db:studio` | Browse the database locally |
-| `npm run db:cleanup` | Prune synchronisation history (90-day retention) |
+| `npm run db:cleanup` | Prune synchronisation history (90 days) and audit events (365 days) |
+| `npm run audit:operation -- backup.run SUCCESS` | Record a backup or restore in the audit trail |
 
 ## Ports already in use
 

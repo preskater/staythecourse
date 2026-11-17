@@ -5,12 +5,16 @@ const requireUserMock = vi.fn();
 const signOutMock = vi.fn();
 const findOwnerByIdMock = vi.fn();
 const updateOwnerPasswordMock = vi.fn();
+const recordAuditEventSafelyMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({ requireUser: () => requireUserMock() }));
 vi.mock("@/auth", () => ({ signOut: (...args: unknown[]) => signOutMock(...args) }));
 vi.mock("@/modules/identity/repository", () => ({
   findOwnerById: (...args: unknown[]) => findOwnerByIdMock(...args),
   updateOwnerPassword: (...args: unknown[]) => updateOwnerPasswordMock(...args),
+}));
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditEventSafelyMock(...args),
 }));
 
 const { changePasswordAction } = await import("./actions");
@@ -41,10 +45,12 @@ describe("changePasswordAction", () => {
       id: owner.id,
       email: owner.email,
       name: owner.name,
+      workspace: { id: "ws-owner-1", name: "Personnel", kind: "PERSONAL", role: "OWNER", modules: [] },
     });
     signOutMock.mockReset().mockResolvedValue(undefined);
     findOwnerByIdMock.mockReset().mockResolvedValue(owner);
     updateOwnerPasswordMock.mockReset().mockResolvedValue(true);
+    recordAuditEventSafelyMock.mockReset();
   });
 
   it("stores a bcrypt hash of the new password and signs the sessions out", async () => {
@@ -65,6 +71,17 @@ describe("changePasswordAction", () => {
 
     // Signing out is what the owner actually sees, and what proves the new password.
     expect(signOutMock).toHaveBeenCalledWith({ redirectTo: "/login?changed=1" });
+
+    const [audit] = recordAuditEventSafelyMock.mock.calls[0] as [Record<string, unknown>];
+    expect(audit).toMatchObject({
+      workspaceId: "ws-owner-1",
+      action: "auth.password_change",
+      entityType: "USER",
+      entityId: owner.id,
+      outcome: "SUCCESS",
+    });
+    expect(JSON.stringify(audit)).not.toContain(CURRENT_PASSWORD);
+    expect(JSON.stringify(audit)).not.toContain(NEW_PASSWORD);
   });
 
   it("never writes the password in clear text", async () => {
@@ -88,6 +105,18 @@ describe("changePasswordAction", () => {
     // like the change worked.
     expect(updateOwnerPasswordMock).not.toHaveBeenCalled();
     expect(signOutMock).not.toHaveBeenCalled();
+
+    // A refusal is a safe denial code, never the submitted password.
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "auth.password_change_refused",
+        outcome: "REFUSED",
+        metadata: { code: "INVALID_CURRENT_PASSWORD" },
+      }),
+    );
+    expect(JSON.stringify(recordAuditEventSafelyMock.mock.calls)).not.toContain(
+      "Fictitious-Wrong-2026",
+    );
   });
 
   it("rejects a payload that breaks the policy before reading anything", async () => {

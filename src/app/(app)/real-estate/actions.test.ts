@@ -11,6 +11,11 @@ const updatePropertyMock = vi.fn();
 const deletePropertyMock = vi.fn();
 const getPropertyDetailMock = vi.fn();
 const savePropertySaleMock = vi.fn();
+const findPropertyEventMock = vi.fn();
+const createPropertyEventMock = vi.fn();
+const updatePropertyEventMock = vi.fn();
+const deletePropertyEventMock = vi.fn();
+const createTransactionMock = vi.fn();
 const revalidatePathMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({ requireModule: (key: string) => requireUserMock(key) }));
@@ -26,8 +31,15 @@ vi.mock("@/modules/real-estate/repository", () => ({
   deleteProperty: (...args: unknown[]) => deletePropertyMock(...args),
   getPropertyDetail: (...args: unknown[]) => getPropertyDetailMock(...args),
   savePropertySale: (...args: unknown[]) => savePropertySaleMock(...args),
+  findPropertyEvent: (...args: unknown[]) => findPropertyEventMock(...args),
+  createPropertyEvent: (...args: unknown[]) => createPropertyEventMock(...args),
+  updatePropertyEvent: (...args: unknown[]) => updatePropertyEventMock(...args),
+  deletePropertyEvent: (...args: unknown[]) => deletePropertyEventMock(...args),
 }));
-vi.mock("@/modules/budget/repository", () => ({ findTransactionRef: vi.fn() }));
+vi.mock("@/modules/budget/repository", () => ({
+  findTransactionRef: vi.fn(),
+  createTransaction: (...args: unknown[]) => createTransactionMock(...args),
+}));
 vi.mock("next/cache", () => ({
   revalidatePath: (...args: unknown[]) => revalidatePathMock(...args),
 }));
@@ -39,6 +51,9 @@ const {
   updatePropertyAction,
   deletePropertyAction,
   sellPropertyAction,
+  createPropertyEventAction,
+  updatePropertyEventAction,
+  deletePropertyEventAction,
 } = await import("./actions");
 
 /**
@@ -320,5 +335,141 @@ describe("sellPropertyAction", () => {
 
     expect(result.status).toBe("invalid");
     expect(savePropertySaleMock).not.toHaveBeenCalled();
+  });
+});
+
+/** Values as the event form sends them: everything is a string. */
+const validEvent = {
+  propertyId: "property-1",
+  kind: "TAX",
+  label: "Taxe foncière 2027",
+  dueDate: "2027-10-15",
+  status: "PLANNED",
+  amount: "1200,00",
+  currency: "EUR",
+  notes: "",
+};
+
+describe("createPropertyEventAction", () => {
+  beforeEach(() => {
+    requireUserMock.mockReset().mockResolvedValue(OWNER);
+    findPropertyMock.mockReset().mockResolvedValue({ id: "property-1", name: "Bien" });
+    createPropertyEventMock.mockReset().mockResolvedValue({ id: "event-1" });
+    createTransactionMock.mockReset();
+    revalidatePathMock.mockReset();
+  });
+
+  it("writes an event for the owner's property and no transaction", async () => {
+    const result = await createPropertyEventAction(validEvent);
+
+    expect(result.status).toBe("ok");
+    expect(findPropertyMock).toHaveBeenCalledWith("ws-owner-1", "property-1");
+    expect(createPropertyEventMock).toHaveBeenCalledTimes(1);
+    const input = createPropertyEventMock.mock.calls[0][1] as { amount: Decimal };
+    expect(input.amount.toFixed(2)).toBe("1200.00");
+    // An obligation is a reminder: it can never create a payment row.
+    expect(createTransactionMock).not.toHaveBeenCalled();
+    expect(revalidatePathMock).toHaveBeenCalledWith("/real-estate");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/real-estate/property-1");
+  });
+
+  it("accepts an undated event", async () => {
+    const result = await createPropertyEventAction({ ...validEvent, dueDate: "" });
+
+    expect(result.status).toBe("ok");
+    expect(createPropertyEventMock).toHaveBeenCalledTimes(1);
+    expect((createPropertyEventMock.mock.calls[0][1] as { dueDate: Date | null }).dueDate).toBeNull();
+  });
+
+  it("refuses a foreign or unknown property and writes nothing", async () => {
+    findPropertyMock.mockResolvedValue(null);
+
+    const result = await createPropertyEventAction(validEvent);
+
+    expect(result.status).toBe("invalid");
+    expect(result.status === "invalid" && result.message).toMatch(/introuvable/i);
+    expect(createPropertyEventMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses an invalid payload before any lookup", async () => {
+    const result = await createPropertyEventAction({ ...validEvent, amount: "-5" });
+
+    expect(result.status).toBe("invalid");
+    expect(findPropertyMock).not.toHaveBeenCalled();
+    expect(createPropertyEventMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("updatePropertyEventAction", () => {
+  beforeEach(() => {
+    requireUserMock.mockReset().mockResolvedValue(OWNER);
+    findPropertyEventMock.mockReset().mockResolvedValue({
+      id: "event-1",
+      propertyId: "property-1",
+    });
+    findPropertyMock.mockReset().mockResolvedValue({ id: "property-1", name: "Bien" });
+    updatePropertyEventMock.mockReset().mockResolvedValue(true);
+    revalidatePathMock.mockReset();
+  });
+
+  it("updates an owner-scoped event", async () => {
+    const result = await updatePropertyEventAction({ ...validEvent, id: "event-1" });
+
+    expect(result.status).toBe("ok");
+    expect(updatePropertyEventMock).toHaveBeenCalledTimes(1);
+    expect(updatePropertyEventMock.mock.calls[0][0]).toBe("ws-owner-1");
+    expect(updatePropertyEventMock.mock.calls[0][1]).toBe("event-1");
+  });
+
+  it("refuses an unknown event and does not update", async () => {
+    findPropertyEventMock.mockResolvedValue(null);
+
+    const result = await updatePropertyEventAction({ ...validEvent, id: "foreign" });
+
+    expect(result.status).toBe("invalid");
+    expect(updatePropertyEventMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses moving an event to a foreign property", async () => {
+    findPropertyMock.mockResolvedValue(null);
+
+    const result = await updatePropertyEventAction({
+      ...validEvent,
+      id: "event-1",
+      propertyId: "property-foreign",
+    });
+
+    expect(result.status).toBe("invalid");
+    expect(updatePropertyEventMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("deletePropertyEventAction", () => {
+  beforeEach(() => {
+    requireUserMock.mockReset().mockResolvedValue(OWNER);
+    findPropertyEventMock.mockReset().mockResolvedValue({
+      id: "event-1",
+      propertyId: "property-1",
+    });
+    deletePropertyEventMock.mockReset().mockResolvedValue(true);
+    revalidatePathMock.mockReset();
+  });
+
+  it("deletes an owner-scoped event and refreshes its property", async () => {
+    const result = await deletePropertyEventAction({ id: "event-1" });
+
+    expect(result.status).toBe("ok");
+    expect(deletePropertyEventMock).toHaveBeenCalledWith("ws-owner-1", "event-1");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/real-estate/property-1");
+  });
+
+  it("refuses an unknown event and reports it", async () => {
+    findPropertyEventMock.mockResolvedValue(null);
+
+    const result = await deletePropertyEventAction({ id: "event-1" });
+
+    expect(result.status).toBe("invalid");
+    expect(result.status === "invalid" && result.message).toMatch(/introuvable/i);
+    expect(deletePropertyEventMock).not.toHaveBeenCalled();
   });
 });

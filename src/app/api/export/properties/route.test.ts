@@ -1,18 +1,14 @@
 import Decimal from "decimal.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const requireApiUserMock = vi.fn();
+const requireApiAccessMock = vi.fn();
 const listPropertiesMock = vi.fn();
 const recordAuditEventMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({
-  requireApiUser: () => requireApiUserMock(),
-  unauthorizedResponse: () =>
-    new Response(JSON.stringify({ error: "Non autorisé." }), {
-      status: 401,
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    }),
-  moduleUnavailableResponse: () => new Response(null, { status: 404 }),
+  requireApiAccess: (...args: unknown[]) => requireApiAccessMock(...args),
+  moduleUnavailableResponse: () =>
+    Response.json({ error: "not_found" }, { status: 404, headers: { "Cache-Control": "no-store" } }),
 }));
 vi.mock("@/modules/real-estate/repository", () => ({
   listProperties: (...args: unknown[]) => listPropertiesMock(...args),
@@ -32,7 +28,7 @@ const OWNER = {
   id: "owner-1",
   email: "owner@example.test",
   name: null,
-  workspace: { id: "ws-owner-1", modules: ["budget", "real-estate"] },
+  workspace: { id: "ws-owner-1", role: "OWNER", modules: ["budget", "real-estate"] },
 };
 
 const PROPERTY = {
@@ -66,14 +62,16 @@ async function bodyOf(response: Response): Promise<string[]> {
 }
 
 beforeEach(() => {
-  requireApiUserMock.mockReset().mockResolvedValue(OWNER);
+  requireApiAccessMock.mockReset().mockResolvedValue(OWNER);
   listPropertiesMock.mockReset().mockResolvedValue([PROPERTY]);
   recordAuditEventMock.mockReset().mockResolvedValue(undefined);
 });
 
 describe("GET /api/export/properties", () => {
   it("refuses an unauthenticated request and reads nothing", async () => {
-    requireApiUserMock.mockResolvedValue(null);
+    requireApiAccessMock.mockResolvedValue(
+      Response.json({ error: "authentication_required" }, { status: 401 }),
+    );
 
     const response = await GET(new Request("http://test.local/api/export/properties"));
 
@@ -83,10 +81,7 @@ describe("GET /api/export/properties", () => {
   });
 
   it("answers 404 and reads nothing when the real-estate module is disabled", async () => {
-    requireApiUserMock.mockResolvedValue({
-      ...OWNER,
-      workspace: { ...OWNER.workspace, modules: ["budget"] },
-    });
+    requireApiAccessMock.mockResolvedValue(Response.json({ error: "not_found" }, { status: 404 }));
 
     const response = await GET(new Request("http://test.local/api/export/properties"));
 
@@ -98,6 +93,7 @@ describe("GET /api/export/properties", () => {
     const response = await GET(new Request("http://test.local/api/export/properties"));
 
     expect(response.status).toBe(200);
+    expect(requireApiAccessMock).toHaveBeenCalledWith("export", "real-estate");
     expect(listPropertiesMock).toHaveBeenCalledWith(OWNER.workspace.id, {
       from: undefined,
       to: undefined,

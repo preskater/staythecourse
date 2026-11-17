@@ -6,7 +6,7 @@ import { TransactionForm } from "./transaction-form";
  * Quick entry for the dashboard (UX-02).
  *
  * It renders the budget page's own `TransactionForm`, not a lighter copy: the same Zod
- * schema, the same `createTransactionAction` (and its `requireUser()`), the same
+ * schema, the same `createTransactionAction` (and its `requireModule("budget", "write")`), the same
  * revalidation and feedback. A convenience path must never be a weaker write path.
  */
 export function QuickTransactionCard({

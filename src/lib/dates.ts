@@ -56,6 +56,30 @@ export function toDateOnlyString(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
+/**
+ * Today's calendar day in the owner's time zone, as a date-only value at UTC midnight.
+ *
+ * An instant near midnight belongs to a different day depending on the zone: a due
+ * date must be compared with the day the owner actually experiences, not with the UTC
+ * day. The zone is explicit at the call site (the configured default time zone), and
+ * `now` is injectable so the boundary is testable.
+ */
+export function todayDateOnly(
+  timeZone: string = DEFAULT_TIME_ZONE,
+  now: Date = new Date(),
+): Date {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((candidate) => candidate.type === type)?.value ?? "";
+
+  return parseDateOnly(`${part("year")}-${part("month")}-${part("day")}`);
+}
+
 /** Parses `YYYY-MM-DD` into a date-only value at UTC midnight. */
 export function parseDateOnly(value: string): Date {
   if (!DATE_ONLY_PATTERN.test(value)) {

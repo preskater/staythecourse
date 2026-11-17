@@ -36,8 +36,12 @@ const deleteCategoryMock = vi.fn();
 const createTransferGroupMock = vi.fn();
 const setTransactionReconciledMock = vi.fn();
 const copyBudgetsMock = vi.fn();
+const recordAuditEventSafelyMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({ requireModule: (key: string) => requireUserMock(key) }));
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditEventSafelyMock(...args),
+}));
 vi.mock("@/modules/budget/repository", () => ({
   deleteTransaction: (...args: unknown[]) => deleteTransactionMock(...args),
   createTransaction: (...args: unknown[]) => createTransactionMock(...args),
@@ -104,6 +108,10 @@ const {
   updateTransactionAction,
 } = await import("./actions");
 
+beforeEach(() => {
+  recordAuditEventSafelyMock.mockReset();
+});
+
 /**
  * Fictitious data only. The action is the only place that decides whether a deletion
  * is allowed, so it is tested against mocked repositories: no test touches a database.
@@ -133,6 +141,15 @@ describe("deleteTransactionAction", () => {
     expect(deleteTransactionMock).toHaveBeenCalledWith(OWNER.workspace.id, "tx-1");
     expect(revalidatePathMock).toHaveBeenCalledWith("/budget");
     expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard");
+
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledTimes(1);
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "transaction.delete",
+        entityId: "tx-1",
+        outcome: "SUCCESS",
+      }),
+    );
   });
 
   it("refuses to delete a transaction a property cashflow is linked to", async () => {
@@ -148,6 +165,8 @@ describe("deleteTransactionAction", () => {
     expect(result.status === "invalid" && result.message).toContain("Appartement de test");
     // And nothing is deleted: the cashflow would be left with no amount at all.
     expect(deleteTransactionMock).not.toHaveBeenCalled();
+    // A refusal writes nothing: the trail records what happened, not what was tried.
+    expect(recordAuditEventSafelyMock).not.toHaveBeenCalled();
   });
 
   it("reports an unknown or already deleted transaction instead of pretending", async () => {
@@ -157,6 +176,7 @@ describe("deleteTransactionAction", () => {
 
     expect(result.status).toBe("invalid");
     expect(result.status === "invalid" && result.message).toMatch(/introuvable/);
+    expect(recordAuditEventSafelyMock).not.toHaveBeenCalled();
   });
 
   it("says both movements were removed when the row belongs to a linked transfer", async () => {
@@ -255,6 +275,20 @@ describe("createTransactionAction", () => {
     // The typed string became an exact decimal before it reached persistence.
     expect((input.amount as { toFixed(scale: number): string }).toFixed(2)).toBe("-45.90");
     expect(revalidatePathMock).toHaveBeenCalledWith("/budget");
+
+    // One entry, and the payload stays out of it: no label, no amount.
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledTimes(1);
+    const [audit] = recordAuditEventSafelyMock.mock.calls[0] as [Record<string, unknown>];
+    expect(audit).toMatchObject({
+      workspaceId: OWNER.workspace.id,
+      actorId: OWNER.id,
+      action: "transaction.create",
+      entityType: "TRANSACTION",
+      entityId: "tx-1",
+      outcome: "SUCCESS",
+    });
+    expect(JSON.stringify(audit)).not.toContain("Courses du samedi");
+    expect(JSON.stringify(audit)).not.toContain("45.90");
   });
 
   it("refuses an account that is not the owner's", async () => {
@@ -334,6 +368,15 @@ describe("updateTransactionAction", () => {
     expect((write.amount as { toFixed(scale: number): string }).toFixed(2)).toBe("120.00");
     expect(revalidatePathMock).toHaveBeenCalledWith("/budget");
     expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard");
+
+    const [audit] = recordAuditEventSafelyMock.mock.calls[0] as [Record<string, unknown>];
+    expect(audit).toMatchObject({
+      action: "transaction.update",
+      entityId: "tx-1",
+      outcome: "SUCCESS",
+    });
+    expect(JSON.stringify(audit)).not.toContain("Courses corrigées");
+    expect(JSON.stringify(audit)).not.toContain("120.00");
   });
 
   it("never sends an external reference: a corrected import stays an import", async () => {
@@ -771,6 +814,16 @@ describe("saveSalarySettingAction", () => {
       "7.50",
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/budget");
+
+    const [audit] = recordAuditEventSafelyMock.mock.calls[0] as [Record<string, unknown>];
+    expect(audit).toMatchObject({
+      action: "rate.write",
+      entityType: "SALARY_RATE",
+      entityId: "2026-10",
+      metadata: { year: 2026, month: 10, currency: "EUR" },
+    });
+    // The rate itself is financial data: the entry keeps the period, not the amount.
+    expect(JSON.stringify(audit)).not.toContain("20.50");
   });
 
   it("writes no redundant change point when the month's rate is unchanged", async () => {
@@ -787,6 +840,8 @@ describe("saveSalarySettingAction", () => {
     // Editing the day length must not sprinkle change points: only the options move.
     expect(upsertSalaryRateMock).not.toHaveBeenCalled();
     expect(upsertSalarySettingMock).toHaveBeenCalledTimes(1);
+    // Nothing rate-shaped changed, so nothing rate-shaped is logged.
+    expect(recordAuditEventSafelyMock).not.toHaveBeenCalled();
   });
 
   it("refuses a rate that is not strictly positive, before writing", async () => {
@@ -1123,6 +1178,14 @@ describe("bookSalaryAction", () => {
     expect((input.operationDate as Date).toISOString()).toBe("2026-10-31T00:00:00.000Z");
     expect(revalidatePathMock).toHaveBeenCalledWith("/budget");
     expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard");
+
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "transaction.salary_book",
+        entityId: "tx-salary",
+        metadata: { month: "2026-10", currency: "EUR" },
+      }),
+    );
   });
 
   it("books a month that is only planned: the calendar is the source, not the day states", async () => {
@@ -1548,6 +1611,14 @@ describe("createTransferAction", () => {
         destinationLabel: "Virement depuis Compte courant",
       }),
     );
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "transaction.transfer",
+        entityType: "TRANSFER",
+        entityId: "group-1",
+        metadata: { currency: "EUR", legs: 2 },
+      }),
+    );
   });
 
   it("keeps a custom label on both legs", async () => {
@@ -1631,6 +1702,13 @@ describe("setTransactionReconciledAction", () => {
       transactionId: "tx-1",
       reconciled: true,
     });
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "transaction.reconcile",
+        entityId: "tx-1",
+        metadata: { reconciled: true },
+      }),
+    );
   });
 
   it("unticks it too", async () => {

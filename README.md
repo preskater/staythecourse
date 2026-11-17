@@ -16,6 +16,9 @@ Working today:
 
 - Owner authentication (Auth.js credentials, no public sign-up), with a **Compte**
   page to change the owner password.
+- Workspace roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) enforced server-side: a
+  viewer can read but cannot write or export, an admin can manage members and modules
+  but can never remove or demote the owner.
 - Personal budget: accounts, categories, transactions entered from the budget
   page, monthly totals per currency, filters, CSV export, deletion with confirmation,
   correction of an existing operation and two charts (a 12-month trend and the month's
@@ -110,6 +113,15 @@ Working today:
   silently exporting another period. Every delivered file writes one audit entry (scope,
   bounds, row count, truncation); a file whose entry cannot be written is withheld. An
   unknown value exports as an empty cell with its reason, never as a zero.
+- Audit trail (`/audit`): append-only and workspace-scoped entries for sign-in and
+  refusals, sign-out, session revocations, password changes,
+  transaction creation/edition/deletion/transfer/
+  reconciliation/salary booking, salary-rate changes, module toggles, provider
+  connections and synchronisations, exports, and operator backup/restore. Rows carry a
+  timestamp, an action code, an entity reference, an outcome and safe metadata (counts,
+  codes, calendar days) — never a label, an amount, a token or a password. Every writer
+  goes through one server helper; nothing exposes an update or a delete, and the only
+  pruning path is the documented 365-day operator job (`npm run db:cleanup`).
 - Real estate: properties and cashflow entries entered from the real-estate
   page, occupancy status, totals, due dates. A **Financement** card tracks the loans
   of a property — capital, a dated outstanding-balance snapshot, rate, term, monthly
@@ -131,6 +143,43 @@ Working today:
   computed says why (no acquisition price, incomplete year, another currency, missing
   loan payment) instead of showing a zero, and a window without any cashflow prints no
   figures at all.
+- Micro-business (`/micro-business`, module key `micro-business`): clients and projects,
+  both archived rather than deleted — archiving writes only a reversible stamp, so every
+  field, date and client link survives and restoring clears it. A project carries an
+  explicit billing model (`FIXED_PRICE`, `TIME_AND_MATERIALS`, `RETAINER`, `INTERNAL`,
+  `NON_BILLABLE`), a status, its own reference currency and optional start/end dates; a
+  billable model requires a client, and `INTERNAL`/`NON_BILLABLE` are shown as producing
+  no revenue. Create/edit through `?editClient=` / `?editProject=`. Only `OWNER` and
+  `ADMIN` write; every member of the workspace reads.
+- Revenue (`/micro-business/revenue`): invoices and explicit credit notes, plus dated
+  payments, refunds and write-offs (all positive magnitudes). Amounts, paid, outstanding
+  and the status (open, partially paid, paid, overdue, written off, credited) are
+  derived on every read from those rows — no status flag can go stale. Overdue starts
+  the day after the due date, compared with the owner's calendar day. Overpayment is
+  refused and the message names the credit-note path; a credit note never exceeds the
+  remaining balance. Recognition is a frozen date + amount snapshot (versioned rules
+  arrive with M15-01), and the monthly summary shows no row for a month without data.
+- Rate cards (`/micro-business/rates`): effective-dated client billing rates and
+  confidential internal loaded-cost rates, kept as separate change points — the most
+  recent entry at or before the month wins, and a month before the first entry has no
+  rate rather than a guessed default. Saving the same month corrects it; rates are never
+  deleted and no stored amount is recomputed. Internal rates require the
+  `read-internal-rates` permission (owner only until M18-01): without it the page never
+  queries or renders them. No revenue entry or invoice exists yet (M10-02).
+- Property events (real-estate, « Échéances et obligations »): taxes, insurance,
+  maintenance, leases, inspections, loan deadlines and renovation tracked as dated
+  reminders — kind, optional calendar date, status (planned, done, cancelled), notes and
+  an optional **informational** amount. The due state is derived (upcoming, due today,
+  overdue, done, cancelled, no date): an undated event is never overdue and no date is
+  ever invented. The list filters by property and status, and create/edit/delete run
+  through owner-scoped Server Actions. Saving an event never creates a transaction, and
+  its amount is labelled « indicatif »: it never enters the property totals.
+- Property calendar (`/real-estate/calendar`): the property events and the cashflow due
+  dates in one view — a Monday-first month grid or a chronological list, filterable by
+  property and status, with every entry linking to its property page. An entry without a
+  date is never placed in a month: it appears in the list under « sans date ». Dates are
+  calendar days (`DATE`) grouped in UTC, so the reader's time zone never moves an entry
+  into another day or month; locale and time zone only affect how a heading is displayed.
 - GitHub / GitLab connections: read-only adapters, encrypted tokens, manual
   synchronisation, project snapshots, and a small GitHub: open issues and pull
   requests counted per repository, an explorer with combinable filters (repository,
@@ -390,7 +439,8 @@ secret must never be added to that block.
 | `npm run db:deploy` | Apply pending migrations (deployment) |
 | `npm run db:seed` | Create the owner, their personal workspace and initial modules, or refresh the owner name (the stored password is kept) |
 | `npm run db:verify-seed` | Check a fresh or throwaway database has one owner, one personal `OWNER` workspace and the selected modules, after running the seed twice |
-| `npm run db:cleanup` | Delete synchronisation runs older than the retention window (keeps the latest success per connection) |
+| `npm run db:cleanup` | Delete synchronisation runs older than 90 days (keeps the latest success per connection) and audit events older than 365 days |
+| `npm run audit:operation -- backup.run SUCCESS` | Record an operator backup/restore in the audit trail |
 | `npm run db:studio` | Browse the database |
 
 ## Project structure
@@ -400,7 +450,7 @@ src/
   app/                 # pages, layouts, Route Handlers, Server Actions
   components/          # interface components
   modules/             # business rules, per module
-    identity/ budget/ real-estate/ integrations/ alerts/ catalog/ search/ dashboard/
+    identity/ budget/ real-estate/ integrations/ alerts/ ai-costs/ audit/ catalog/ search/ dashboard/
   lib/                 # database, configuration, cross-cutting utilities
   jobs/                # synchronisation tasks run server-side
   generated/prisma/    # generated client, not committed
@@ -426,6 +476,11 @@ compose.yaml
   currency of its account, which is never asked for twice.
 - A property cashflow is either a typed amount **or** a link to a transaction,
   never both: otherwise the same money would be counted twice.
+- A currency conversion uses a stored **rate snapshot** (exact rate, its source and its
+  date), never a live feed or a guessed rate. The original amount and currency are kept,
+  the converted figure references the snapshot it used, and recording a newer rate never
+  changes a value already computed. Without a rate for the pair and the day, the amount
+  stays unknown rather than being converted implicitly.
 - The write forms validate in the browser with zod (react-hook-form) and the
   Server Action validates the same payload again before touching the database.
 
@@ -450,8 +505,9 @@ retried with bounded backoff; authentication, permission and not-found refusals 
 final. The number of retries is kept on the run.
 
 Run history is kept for 90 days (`SYNC_RUN_RETENTION_DAYS`), except the most recent
-successful run of each connection. `npm run db:cleanup` applies the policy and is safe
-to re-run; nothing schedules it. Provider snapshots are current state, not history: a
+successful run of each connection, and audit events for 365 days
+(`AUDIT_RETENTION_DAYS`). `npm run db:cleanup` applies both policies and is safe to
+re-run; nothing schedules it. Provider snapshots are current state, not history: a
 run replaces them, and closed issues leave the list, so they are not subject to this
 retention.
 
@@ -464,9 +520,11 @@ the action-level tests mock their modules. They cover what is expensive to get
 wrong: money and date handling, monthly totals (transfers counted by sign, refunds,
 currencies), CSV escaping and formula neutralisation, the export routes and the umbrella
 selector (filters and their boundaries, invalid windows, empty files, bounded reads,
-truncation header, owner scoping, audit entries), the audit metadata redaction, the
-password policy
-and the session guard, provider failure cases, issue filters and milestones.
+truncation header, owner scoping, audit entries), the audit metadata redaction and its
+append-only invariant, the audit entries written by transaction, password, module and
+synchronisation actions (including denials that write nothing), the password policy
+and the session guard, retention boundaries, provider failure cases, issue filters and
+milestones.
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
 install, generate the Prisma client, lint, type check, unit tests, apply the

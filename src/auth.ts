@@ -3,9 +3,16 @@ import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 import { authConfig } from "@/auth.config";
 import { burnPasswordComparison, passwordTag, verifyPassword } from "@/lib/auth/password";
+import type { AuditAction, AuditOutcome } from "@/modules/audit/domain";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { clientKindFromUserAgent } from "@/modules/identity/domain";
-import { findOwnerByEmail, normaliseEmail } from "@/modules/identity/repository";
+import {
+  findOwnerByEmail,
+  listMemberships,
+  normaliseEmail,
+} from "@/modules/identity/repository";
 import { createSession } from "@/modules/identity/sessions";
+import { resolveActiveWorkspace } from "@/modules/identity/workspace";
 
 /**
  * Server-side Auth.js instance.
@@ -17,6 +24,38 @@ const credentialsSchema = z.object({
   email: z.string().min(3),
   password: z.string().min(1),
 });
+
+/**
+ * Records an authentication event in the owner's own workspace.
+ *
+ * The address and the password never reach the trail: a refusal carries a denial code
+ * only. The write is best-effort — an audit outage must not lock the owner out — and
+ * an unknown address writes nothing, because there is no workspace to scope it to.
+ */
+async function recordAuthEvent(input: {
+  ownerId: string;
+  action: AuditAction;
+  outcome: AuditOutcome;
+  entityId?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    const workspace = resolveActiveWorkspace(await listMemberships(input.ownerId));
+    if (!workspace) return;
+
+    await recordAuditEventSafely({
+      workspaceId: workspace.id,
+      actorId: input.ownerId,
+      action: input.action,
+      entityType: "SESSION",
+      entityId: input.entityId ?? null,
+      outcome: input.outcome,
+      metadata: input.metadata,
+    });
+  } catch (error) {
+    console.error(`[auth-audit] ${error instanceof Error ? error.name : typeof error}`);
+  }
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -48,6 +87,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           owner.passwordHash,
         );
         if (!isPasswordValid) {
+          await recordAuthEvent({
+            ownerId: owner.id,
+            action: "auth.sign_in_refused",
+            outcome: "REFUSED",
+            metadata: { code: "INVALID_CREDENTIALS" },
+          });
           return null;
         }
 
@@ -55,10 +100,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // revoke later; the token carries its identifier, and the guard refuses a
         // token whose row is missing, revoked or owned by someone else. The client
         // family comes from this request and the header itself is not kept.
-        const sessionId = await createSession(
-          owner.id,
-          clientKindFromUserAgent(request?.headers.get("user-agent")),
-        );
+        const client = clientKindFromUserAgent(request?.headers.get("user-agent"));
+        const sessionId = await createSession(owner.id, client);
+
+        await recordAuthEvent({
+          ownerId: owner.id,
+          action: "auth.sign_in",
+          outcome: "SUCCESS",
+          entityId: sessionId,
+          metadata: { client },
+        });
 
         return {
           id: owner.id,

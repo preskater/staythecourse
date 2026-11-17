@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getSessionUserMock = vi.fn();
 const revokeSessionMock = vi.fn();
 const signOutMock = vi.fn();
+const recordAuditEventSafelyMock = vi.fn();
 
 vi.mock("next-auth", () => ({
   AuthError: class AuthError extends Error {},
@@ -22,6 +23,9 @@ vi.mock("@/lib/auth/guard", () => ({
 vi.mock("@/modules/identity/sessions", () => ({
   revokeSession: (...args: unknown[]) => revokeSessionMock(...args),
 }));
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditEventSafelyMock(...args),
+}));
 
 const { signOutAction } = await import("./actions");
 
@@ -32,9 +36,11 @@ describe("signOutAction", () => {
       email: "owner@example.test",
       name: null,
       sessionId: "session-current",
+      workspace: { id: "ws-owner-1", name: "Personnel", kind: "PERSONAL", role: "OWNER", modules: [] },
     });
     revokeSessionMock.mockReset().mockResolvedValue(true);
     signOutMock.mockReset().mockResolvedValue(undefined);
+    recordAuditEventSafelyMock.mockReset();
   });
 
   it("revokes the current session before clearing the cookie", async () => {
@@ -42,6 +48,14 @@ describe("signOutAction", () => {
 
     expect(revokeSessionMock).toHaveBeenCalledWith("owner-1", "session-current");
     expect(signOutMock).toHaveBeenCalledWith({ redirectTo: "/login" });
+    expect(recordAuditEventSafelyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-owner-1",
+        action: "auth.sign_out",
+        entityId: "session-current",
+        outcome: "SUCCESS",
+      }),
+    );
   });
 
   it("still signs out when the revocation fails", async () => {

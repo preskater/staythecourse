@@ -1,4 +1,4 @@
-import { requireApiUser, unauthorizedResponse } from "@/lib/auth/guard";
+import { requireApiAccess } from "@/lib/auth/guard";
 import { isExportEntity } from "@/lib/exports";
 import { serveEntityExport, unknownEntityResponse } from "@/lib/export-route";
 
@@ -17,10 +17,10 @@ import { serveEntityExport, unknownEntityResponse } from "@/lib/export-route";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request): Promise<Response> {
-  const user = await requireApiUser();
+  const user = await requireApiAccess("export");
 
-  if (!user) {
-    return unauthorizedResponse();
+  if (user instanceof Response) {
+    return user;
   }
 
   const entity = new URL(request.url).searchParams.get("entity");

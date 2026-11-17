@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { invalidResult, rejectedResult, unexpectedResult, type ActionResult } from "@/lib/actions";
 import { requireUser } from "@/lib/auth/guard";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { MODULE_CATALOG } from "@/modules/catalog/catalog";
 import { applyModuleChange } from "@/modules/catalog/repository";
-import { canManageModules } from "@/modules/identity/workspace";
+import { hasPermission } from "@/modules/identity/permissions";
 
 const moduleToggleInput = z.object({ key: z.string(), enabled: z.boolean() });
 
@@ -20,7 +21,7 @@ const moduleToggleInput = z.object({ key: z.string(), enabled: z.boolean() });
 export async function setModuleEnabledAction(values: unknown): Promise<ActionResult> {
   const user = await requireUser();
 
-  if (!canManageModules(user.workspace.role)) {
+  if (!hasPermission(user.workspace.role, "manage-modules")) {
     return {
       status: "error",
       message: "Seuls le propriétaire et les administrateurs de l'espace peuvent changer ses modules.",
@@ -46,6 +47,16 @@ export async function setModuleEnabledAction(values: unknown): Promise<ActionRes
     const missing = change.missing.map((key) => MODULE_CATALOG[key].label).join(", ");
     return rejectedResult("key", `Activez d'abord : ${missing}.`);
   }
+
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: parsed.data.enabled ? "module.enable" : "module.disable",
+    entityType: "MODULE",
+    entityId: parsed.data.key,
+    outcome: "SUCCESS",
+    metadata: { key: parsed.data.key, enabled: parsed.data.enabled },
+  });
 
   // Navigation and dashboard are rendered from the entitlements: refresh every page.
   revalidatePath("/", "layout");
