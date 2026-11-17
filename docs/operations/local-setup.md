@@ -62,8 +62,11 @@ npm run db:seed
   `npm run db:migrate` only when you are authoring a migration (see
   [Migration deployment](./migrations.md)).
 - `db:seed` creates the owner from `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD` and
-  `SEED_OWNER_NAME`, or refreshes the name of the account that exists. The stored
-  password is kept once the account exists, unless `SEED_OWNER_FORCE_PASSWORD=true`.
+  `SEED_OWNER_NAME`, together with their personal workspace and the modules listed in
+  `SEED_WORKSPACE_MODULES` (default `budget,real-estate,development`), or refreshes the
+  name of the account that exists. The stored password is kept once the account exists,
+  unless `SEED_OWNER_FORCE_PASSWORD=true`. Re-running it creates no duplicate and does
+  not re-enable a module disabled from `/modules`.
 - Server configuration is validated lazily by `src/lib/env.ts`: a missing or malformed
   secret fails on first use with the variable names, not with an obscure error later.
 
@@ -107,7 +110,8 @@ Optional, still with fictitious data: `npm run lint`, `npm run typecheck` and
 | `npm run db:generate` | Regenerate the Prisma client after a schema change |
 | `npm run db:migrate` | Author and apply a migration (development) |
 | `npm run db:deploy` | Apply committed migrations |
-| `npm run db:seed` | Create or refresh the owner account |
+| `npm run db:seed` | Create or refresh the owner, personal workspace and initial modules |
+| `npm run db:verify-seed` | Verify the seed output on a fresh or throwaway database |
 | `npm run db:studio` | Browse the database locally |
 | `npm run db:cleanup` | Prune synchronisation history (90-day retention) |
 

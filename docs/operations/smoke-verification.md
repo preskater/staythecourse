@@ -74,6 +74,7 @@ export SEED_OWNER_EMAIL="owner@example.test"
 export SEED_OWNER_PASSWORD="Fictitious-Password-2026"
 export SEED_OWNER_NAME="Proprietaire fictif"
 export SEED_OWNER_FORCE_PASSWORD=false
+export SEED_WORKSPACE_MODULES="budget,real-estate,development"
 export BACKUP_DIR="$WORK/backups"
 export POSTGRES_USER=dashboard
 export POSTGRES_DB=dashboard
@@ -89,6 +90,8 @@ Prepare the data and build:
 ```sh
 npm run db:deploy
 npm run db:seed
+npm run db:seed        # the second run must create no duplicate
+npm run db:verify-seed # one owner, one OWNER workspace, the selected modules
 npm run build
 ```
 
@@ -159,6 +162,7 @@ removes it. Confirm `lsof -ti tcp:3100` prints nothing before reusing port 3100.
 | --- | --- |
 | Committed migrations apply to an empty database | A migration that only fails on existing production data |
 | The seed creates the owner and sign-in works | A real provider token, a real sync, or provider quota behaviour |
+| The seed is re-runnable: a second run leaves one owner, one personal `OWNER` workspace and the selected module rows | Modules enabled or disabled from the interface afterwards, which the seed deliberately keeps |
 | Every route renders server-side with the session guard | The reverse proxy, TLS, DNS or the browsable origin |
 | Backup, verification and restore work with the real scripts | Off-host backup copies, scheduling or retention |
 | Diagnostics can read the database and the backup folder | Disk space, host health or external monitoring |

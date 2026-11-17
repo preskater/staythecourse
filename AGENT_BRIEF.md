@@ -103,7 +103,8 @@ docs/                architecture/overview.md, decisions/
 | `npm test` | Vitest, one run (`npm run test:watch` to keep it running). No database, no network: adapters get an injected fake `fetch`. |
 | `npm run build` | Production build. It type-checks test files too. |
 | `npm run db:migrate` / `npm run db:deploy` | Create + apply a migration (dev) / apply pending migrations (deploy, CI). |
-| `npm run db:seed` | Creates the single owner from `SEED_OWNER_*`; idempotent. |
+| `npm run db:seed` | Creates the single owner, their personal workspace and initial modules from `SEED_*`; idempotent. |
+| `npm run db:verify-seed` | Checks the seed output (one owner, one `OWNER` workspace, selected modules) on a fresh/throwaway database. |
 | `npm run db:studio` | Prisma Studio. |
 
 Local flow: `npm install`, `npm run db:generate`, copy `.env.example` to `.env`,
@@ -119,6 +120,9 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
 - Required server-side: `DATABASE_URL`, `AUTH_SECRET` (32+ characters),
   `INTEGRATION_ENCRYPTION_KEY` (32 bytes, base64, protects provider tokens),
   `SEED_OWNER_EMAIL` / `SEED_OWNER_PASSWORD`.
+- `SEED_WORKSPACE_MODULES` lists the module keys enabled in the personal workspace on
+  first seed (`budget,real-estate,development` when unset). The seed only adds missing
+  rows, so it never re-enables a module the owner disabled.
 - The browsed origin is three coupled variables that must agree: `AUTH_URL` (what
   the app is told), `APP_HOST` (what the proxy answers for) and `PROXY_PORT` (the
   published host port). Default: `http://dashboard.localhost:8888`.
