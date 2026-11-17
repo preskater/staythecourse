@@ -42,6 +42,8 @@ export const AUDIT_ACTIONS = [
   "revenue.write_off",
   // Configuration that changes what the dashboard computes.
   "rate.write",
+  "rate.billing_write",
+  "rate.internal_write",
   "module.enable",
   "module.disable",
   // Provider connections and deferred reads.
@@ -72,6 +74,8 @@ export const AUDIT_ENTITY_TYPES = [
   "TRANSFER",
   "REVENUE_DOCUMENT",
   "SALARY_RATE",
+  "BILLING_RATE",
+  "INTERNAL_COST_RATE",
   "MODULE",
   "INTEGRATION",
   "OPERATION",
