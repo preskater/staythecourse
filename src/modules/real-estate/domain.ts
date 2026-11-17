@@ -35,6 +35,15 @@ export const PROPERTY_OCCUPANCIES = [
 ] as const;
 export type PropertyOccupancy = (typeof PROPERTY_OCCUPANCIES)[number];
 
+/** What the interface shows for each occupancy; the export reuses it verbatim. */
+export const PROPERTY_OCCUPANCY_LABELS: Record<PropertyOccupancy, string> = {
+  RENTED: "Loué",
+  VACANT: "Vacant",
+  OWNER_OCCUPIED: "Occupé par le propriétaire",
+  SEASONAL: "Saisonnier",
+  OTHER: "Autre",
+};
+
 export const CASHFLOW_KINDS = ["INCOME", "EXPENSE"] as const;
 export type CashflowKind = (typeof CASHFLOW_KINDS)[number];
 

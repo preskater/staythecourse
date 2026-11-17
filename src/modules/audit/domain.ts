@@ -19,6 +19,7 @@ export const AUDIT_ACTIONS = [
   "export.budgets",
   "export.goals",
   "export.alerts",
+  "export.summary",
   // Authentication and credentials. A refusal is a denial code, never the submitted
   // address or password.
   "auth.sign_in",

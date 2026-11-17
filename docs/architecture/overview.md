@@ -17,16 +17,16 @@ the pages that consume it.
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
-| `micro-business` | Clients and projects of a commercial workspace: billing model, status, reference currency, key dates, archive/restore. No revenue entry or invoice yet (M10-02). | `domain.ts`, `repository.ts` |
+| `micro-business` | Clients and projects of a commercial workspace: billing model, status, reference currency, key dates, archive/restore. Revenue documents (invoices, credit notes) and their settling movements (payments, refunds, write-offs), with the derived statement per invoice. | `domain.ts`, `revenue.ts`, `repository.ts` |
 | `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period), their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions, and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). Conservation is exact in cents; finalized entries are immutable. No provider call yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `exchange.ts`, `repository.ts` |
 | `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots. | `domain.ts`, `adapter.ts`, `github.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
-| `dashboard` | Read-only aggregation for the home page. | `queries.ts` |
+| `dashboard` | Read-only aggregation for the home page, plus the situation summary exported as Markdown. | `queries.ts`, `summary.ts`, `summary-markdown.ts` |
 | `audit` | Append-only trail of security-sensitive and data-changing actions: authentication, credentials, ledger writes, rates, modules, integrations, exports and operator procedures. Codes, references, counts and calendar days only. | `domain.ts`, `repository.ts` |
 
 Cross-cutting code sits in `src/lib` (`db`, `env`, `money`, `dates`, `csv`,
-`crypto`, `auth`). Background work sits in `src/jobs` and is triggered from
+`markdown`, `crypto`, `auth`). Background work sits in `src/jobs` and is triggered from
 outside the web process.
 
 ## Request flow
@@ -1045,7 +1045,8 @@ Rules, in one place:
 
 ## Exports
 
-Five CSV exports leave the application. Each entity keeps its own Route Handler, and the
+Five CSV exports leave the application, plus one global Markdown summary (see below).
+Each CSV entity keeps its own Route Handler, and the
 umbrella `/api/export?entity=...` selects the same builder, so both entry points share
 the guards, the columns, the row bound and the audit entry:
 
@@ -1104,6 +1105,65 @@ one in-memory string, a few megabytes at this cap. Past it the right answer woul
 cursor and a chunked response; the header is what makes the cut visible until then. The
 single-month budget export is bounded by its own shape (one row per category and
 currency).
+
+### Situation summary (Markdown)
+
+`/api/export/summary` delivers **one Markdown document** describing the whole situation,
+written first for an assistant and second for a person: the reader may be a language
+model that has to reason about forecasts, recurring expenses and future salary without
+guessing what a number means. The builders are `readSituationSummary`
+(`src/modules/dashboard/summary.ts`, reads only) and `renderSituationSummary`
+(`src/modules/dashboard/summary-markdown.ts`, pure); the route holds the guards.
+
+The document is ordered so that the meaning comes before the figures:
+
+1. **metadata** — generation instant, workspace, reference month, horizon, default
+   currency, display time zone, scope, active modules;
+2. **"Comment lire ce document"** — the conventions, stated once: exact decimals with a
+   dot, a currency column instead of a formatted display, no conversion between
+   currencies, signed amounts except the positive magnitudes of the realized tables
+   (`Dépenses`, `Charges`, `Reste dû`), `inconnu` for a value that was never recorded, `—`
+   for "not applicable", calendar days `YYYY-MM-DD` versus ISO instants, recorded versus
+   planned, transfers counted by sign, and the simulated salary outside the realized
+   figures until it is booked;
+3. **sections table** — every section and whether it is included, empty ("aucune donnée
+   enregistrée") or absent, with the reason (module inactive, or excluded by `scope`), so
+   an assistant never reads a missing section as a zero;
+4. **the sections** — accounts and recorded balances, the reference month's actuals and
+   budget tracking, recurring series, the month's forecast with its undecided movements,
+   the salary per month (simulated hours *and* the booked amount), a projected
+   end-of-month balance for the coming months, the savings cushion, goals, properties,
+   loans, unsettled property due dates, micro-business projects and outstanding invoices,
+   integration state and active alerts.
+
+Filters: `scope=all|finance` (default `all`; `finance` restricts the document to the
+budget module — the other sections and the alerts whose rule reads another module are
+left out, and the exclusion is stated), `month=YYYY-MM` (default current; a malformed
+value falls back like the budgets export) and `horizon=1..12` (months after the reference
+month, default 6). An unknown `scope` or an out-of-range `horizon` answers
+400 (`invalid_export_filter`) before any read: a document describing another perimeter
+than the one asked for is worse than no document.
+
+Two properties separate it from the CSV exports:
+
+- **read-only.** The Prévisions tab materialises its occurrences when opened; an export
+  is not a visit, so nothing is written. The planned dates are recomputed from the series
+  with `plannedOccurrences` — the function materialisation uses — and matched with the
+  stored occurrences for their decision; a date without a stored row is `PENDING`, which
+  is exactly what a materialisation would have written.
+- **reuse, not re-derivation.** Every figure comes from the pure function the screen
+  uses (`summariseForecastMonth`, `buildBudgetReport`, `computeGoalProgress`,
+  `buildSavingsThresholds`, `buildSimulatedBalances`, `statementOf`), so the document
+  cannot disagree with the interface.
+
+Bounded like the CSV files (`SUMMARY_TABLE_LIMIT` = 200 rows per list, the month's
+transactions at `EXPORT_ROW_LIMIT`), but a cut is reported **inside** the document
+("Lecture tronquée") as well as through `X-Export-Truncated`. Owner-supplied text (a
+label, a note) goes through `escapeMarkdownCell` in `src/lib/markdown.ts`, which escapes
+a pipe and collapses line breaks so a stored value cannot shift a table row or open a new
+block. The delivery writes one `export.summary` audit entry (`scope`, `month`, `horizon`,
+section count, truncation) before the response; a file whose entry cannot be written is
+withheld, like every other export.
 
 ### Audit trail (SO-02 / M18-02)
 

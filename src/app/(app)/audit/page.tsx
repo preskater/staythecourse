@@ -28,6 +28,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   "export.budgets": "Export des budgets",
   "export.goals": "Export des objectifs",
   "export.alerts": "Export des alertes",
+  "export.summary": "Export de la synthèse de situation",
   "auth.sign_in": "Connexion",
   "auth.sign_in_refused": "Connexion refusée",
   "auth.sign_out": "Déconnexion",

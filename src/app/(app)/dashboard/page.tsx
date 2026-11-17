@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ActionMenu, type ActionMenuGroup } from "@/components/action-menu";
 import {
 	Badge,
 	Card,
@@ -43,28 +44,58 @@ export default async function DashboardPage() {
 		overview;
 	const noModule = !budget && !realEstate && !integrations;
 
+	// The header keeps one primary gesture and one menu: three side-by-side buttons
+	// wrapped onto two rows and read like a toolbar rather than a page title.
+	const exportActions: ActionMenuGroup[] = [
+		{
+			label: "Exporter",
+			items: [
+				...(budget
+					? [
+							{
+								href: "/api/export/transactions",
+								label: "Transactions (CSV)",
+								hint: `Opérations de ${monthLabel}`,
+							},
+						]
+					: []),
+				{
+					href: "/api/export/summary",
+					label: "Synthèse de situation (.md)",
+					hint: "Document complet, lisible par un assistant",
+				},
+				...(budget
+					? [
+							{
+								href: "/api/export/summary?scope=finance",
+								label: "Situation financière seule (.md)",
+								hint: "Budget uniquement",
+							},
+						]
+					: []),
+			],
+		},
+	];
+
 	return (
 		<>
 			<PageHeader
 				title="Tableau de bord"
 				description={`Indicateurs de ${monthLabel}. Chaque total est calculé à partir des opérations enregistrées.`}
 				actions={
-					budget ? (
+					noModule ? null : (
 						<>
-							<Link
-								href="/budget"
-								className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-							>
-								Saisir une opération
-							</Link>
-							<Link
-								href="/api/export/transactions"
-								className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-							>
-								Exporter les transactions (CSV)
-							</Link>
+							{budget ? (
+								<Link
+									href="/budget"
+									className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+								>
+									Saisir une opération
+								</Link>
+							) : null}
+							<ActionMenu label="Actions" groups={exportActions} />
 						</>
-					) : null
+					)
 				}
 			/>
 
@@ -371,6 +402,32 @@ export default async function DashboardPage() {
 					</Card>
 				) : null}
 			</div>
+
+			{noModule ? null : (
+				<Card
+					title="Synthèse de situation"
+					description="Un document Markdown unique — comptes, réalisé, budgets, séries récurrentes, prévisions, salaire simulé, échéancier des mois à venir, épargne, objectifs, immobilier, micro-entreprise, intégrations et alertes — lisible tel quel ou transmissible à un assistant. Il ne contient aucune recommandation et ne lit que les données enregistrées ici."
+				>
+					<div className="flex flex-col gap-3">
+						<div>
+							<Link
+								href="/api/export/summary"
+								className="inline-flex rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+							>
+								Télécharger la synthèse (.md)
+							</Link>
+						</div>
+						<p className="text-xs text-zinc-500 dark:text-zinc-400">
+							Le document cite son mois de référence et son horizon (6 mois par défaut), indique
+							les sections absentes — module inactif ou périmètre réduit — et distingue
+							« inconnu » d&apos;un zéro. Un bloc « Comment lire ce document » fixe les
+							conventions de signes, de devises et de dates. Le fichier est généré à la demande
+							et l&apos;export est inscrit au journal d&apos;audit. Le périmètre
+							« finances seules » est disponible depuis le menu Actions.
+						</p>
+					</div>
+				</Card>
+			)}
 		</>
 	);
 }

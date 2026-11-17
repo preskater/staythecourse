@@ -113,6 +113,27 @@ Working today:
   silently exporting another period. Every delivered file writes one audit entry (scope,
   bounds, row count, truncation); a file whose entry cannot be written is withheld. An
   unknown value exports as an empty cell with its reason, never as a zero.
+- Situation summary (`/api/export/summary`, behind the header's **Actions** menu on the
+  dashboard and on the budget page — where it is scoped to the budget — plus a dedicated
+  dashboard card): one Markdown document that describes the whole situation in one file,
+  written to be read by a person **or handed to an assistant**. It opens with metadata
+  (reference month, horizon, currency, active modules), a "Comment lire ce document"
+  block fixing the conventions — exact decimals with a point, no currency conversion,
+  signed amounts except the positive magnitudes of the realized tables, unknown ≠ zero,
+  calendar days vs ISO instants, planned vs recorded — then a table of every section
+  stating whether it is included, empty or absent (and why), then the sections: accounts
+  and recorded balances, the reference month's actuals and budget tracking, recurring
+  series, the month's forecast with its undecided movements, the simulated *and* booked
+  salary per month, a projected end-of-month balance for the coming months, the savings
+  cushion, goals, properties, loans, unsettled property due dates, micro-business
+  projects and outstanding invoices, integration state and active alerts.
+  `?scope=finance` narrows the document to the budget module (its sections, and only the
+  alerts whose rule reads it), `?month=YYYY-MM` moves the
+  reference month and `?horizon=1..12` sets how many months the schedule covers; an
+  unknown scope or an out-of-range horizon answers 400 before any read. The document is
+  **read-only**: it never materialises occurrences, recomputing them from the series the
+  same way the Prévisions tab would, and every delivered file writes one `export.summary`
+  audit entry — a file whose entry cannot be written is withheld.
 - Audit trail (`/audit`): append-only and workspace-scoped entries for sign-in and
   refusals, sign-out, session revocations, password changes,
   transaction creation/edition/deletion/transfer/
