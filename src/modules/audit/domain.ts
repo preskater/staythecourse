@@ -40,6 +40,9 @@ export const AUDIT_ACTIONS = [
   "revenue.payment",
   "revenue.refund",
   "revenue.write_off",
+  // Recurring business expenses (M10-05): definitions, never ledger rows.
+  "business_expense.create",
+  "business_expense.delete",
   // Configuration that changes what the dashboard computes.
   "rate.write",
   "rate.billing_write",
@@ -76,6 +79,7 @@ export const AUDIT_ENTITY_TYPES = [
   "SALARY_RATE",
   "BILLING_RATE",
   "INTERNAL_COST_RATE",
+  "BUSINESS_EXPENSE",
   "MODULE",
   "INTEGRATION",
   "OPERATION",

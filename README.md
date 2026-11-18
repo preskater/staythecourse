@@ -165,7 +165,14 @@ Working today:
   rate rather than a guessed default. Saving the same month corrects it; rates are never
   deleted and no stored amount is recomputed. Internal rates require the
   `read-internal-rates` permission (owner only until M18-01): without it the page never
-  queries or renders them. No revenue entry or invoice exists yet (M10-02).
+  queries or renders them.
+- Recurring business expenses (`/micro-business/expenses`): software renewals,
+  contractors, insurance and planning reserves, with monthly, quarterly or yearly
+  cadence. Due dates are computed on read from the start date — day-of-month clamped to
+  the month's length, end date inclusive — so re-rendering can never duplicate an
+  occurrence, and nothing is written to the budget. Every amount is a planning estimate:
+  no payment is made and this is not tax advice. Definitions are created and deleted;
+  no occurrence row exists to edit.
 - Property events (real-estate, « Échéances et obligations »): taxes, insurance,
   maintenance, leases, inspections, loan deadlines and renovation tracked as dated
   reminders — kind, optional calendar date, status (planned, done, cancelled), notes and
