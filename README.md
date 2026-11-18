@@ -86,6 +86,12 @@ Working today:
   negatives), duplicates are skipped on request, and only the normalised rows reach a
   Server Action that validates everything again — nothing is uploaded before the
   preview, and nothing is sent to a third party.
+  A **Prêts** page (`/budget/loans`) registers mortgages, vehicle, consumer, student and
+  business loans: purpose, optional lender, principal, optional rate, term, deferral and
+  an explicit insurance mode, plus a dated manual balance snapshot. A missing rate, term,
+  insurance or balance reads « non renseigné », never zero; amounts stay exact in one
+  currency and are never summed across currencies, and no amortisation schedule is
+  computed. Archiving is reversible and keeps the history readable.
   Submitted values stay in the transaction and cashflow forms, so a second line is a
   small edit; the one-shot forms (account, category, property, password) clear themselves.
 - Alerts: an **Alertes** page watches six deterministic rules — low account balance,

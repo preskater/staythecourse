@@ -136,6 +136,12 @@ export default async function BudgetPage({
         description={descriptions[tab]}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link
+              href="/budget/loans"
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Prêts
+            </Link>
             <ExpenseSimulationModal
               accounts={accounts}
               categories={expenseCategories}

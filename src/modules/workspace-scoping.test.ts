@@ -27,6 +27,7 @@ const prisma = {
   exchangeRateSnapshot: table,
   property: table,
   propertyLoan: table,
+  loan: table,
   propertyValuation: { create: createValuationMock },
   client: table,
   project: table,
@@ -56,6 +57,14 @@ const { findConnectionForSync, listIssues } = await import("./integrations/repos
 const { findExchangeRateSnapshotById, recordExchangeRate } = await import(
   "./ai-costs/repository"
 );
+const {
+  createLoan,
+  findLoan: findRegistryLoan,
+  listLoans: listRegistryLoans,
+  listSelectableLoans,
+  setLoanArchived,
+  updateLoan: updateRegistryLoan,
+} = await import("./loans/repository");
 
 const FOREIGN = "ws-someone-else";
 
@@ -243,5 +252,63 @@ describe("ai-costs", () => {
     expect(createMock.mock.calls[0][0]).toMatchObject({
       data: { workspaceId: "ws-1", baseCurrency: "USD", quoteCurrency: "EUR" },
     });
+  });
+});
+
+describe("loans", () => {
+  const loanWrite = {
+    label: "Prêt auto",
+    lender: "Banque",
+    notes: null,
+    purpose: "VEHICLE",
+    currency: "EUR",
+    initialPrincipal: new Decimal("25000.00"),
+    annualRate: new Decimal("3.45"),
+    termMonths: 60,
+    startDate: null,
+    firstDueDate: null,
+    paymentDay: 5,
+    interestOnlyMonths: 0,
+    insuranceMode: "NONE",
+    insuranceMonthlyAmount: null,
+    insuranceRate: null,
+    fees: null,
+    propertyId: null,
+    outstandingBalance: null,
+    balanceAsOf: null,
+  } as const;
+
+  it("lists only the workspace's loans, with and without archived rows", async () => {
+    await listRegistryLoans("ws-1");
+    expect(where(findManyMock)).toEqual({ workspaceId: "ws-1" });
+
+    await listSelectableLoans("ws-1");
+    expect(lastWhere(findManyMock)).toEqual({ workspaceId: "ws-1", archivedAt: null });
+  });
+
+  it("reads a foreign workspace's loan as not found", async () => {
+    expect(await findRegistryLoan(FOREIGN, "loan-1")).toBeNull();
+    expect(where(findFirstMock)).toEqual({ id: "loan-1", workspaceId: FOREIGN });
+  });
+
+  it("writes a new loan into the given workspace only", async () => {
+    await createLoan({ workspaceId: "ws-1", userId: "user-1", ...loanWrite });
+
+    expect(createMock.mock.calls[0][0]).toMatchObject({
+      data: {
+        workspaceId: "ws-1",
+        userId: "user-1",
+        initialPrincipal: "25000.00",
+        annualRate: "3.4500",
+      },
+    });
+  });
+
+  it("refuses to update or archive through a foreign workspace", async () => {
+    expect(await updateRegistryLoan(FOREIGN, "loan-1", loanWrite)).toBe(false);
+    expect(where(updateManyMock)).toEqual({ id: "loan-1", workspaceId: FOREIGN });
+
+    expect(await setLoanArchived(FOREIGN, "loan-1", true)).toBe(false);
+    expect(lastWhere(updateManyMock)).toEqual({ id: "loan-1", workspaceId: FOREIGN });
   });
 });

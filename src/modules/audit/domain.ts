@@ -43,6 +43,11 @@ export const AUDIT_ACTIONS = [
   // Recurring business expenses (M10-05): definitions, never ledger rows.
   "business_expense.create",
   "business_expense.delete",
+  // Loan registry (M21-01). Identifiers and field codes only: no amount, no label.
+  "loan.create",
+  "loan.update",
+  "loan.archive",
+  "loan.restore",
   // Configuration that changes what the dashboard computes.
   "rate.write",
   "rate.billing_write",
@@ -80,6 +85,7 @@ export const AUDIT_ENTITY_TYPES = [
   "BILLING_RATE",
   "INTERNAL_COST_RATE",
   "BUSINESS_EXPENSE",
+  "LOAN",
   "MODULE",
   "INTEGRATION",
   "OPERATION",
