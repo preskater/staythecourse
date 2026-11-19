@@ -236,6 +236,8 @@ enum AgentStatus {
   ACTIVE
   PAUSED
   RETIRED
+}
+
 /// How an allocation policy turns its targets into shares (M9-03).
 enum AllocationPolicyKind {
   MANUAL
