@@ -182,6 +182,12 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       OWNER,
       { baseCurrency: "USD", quoteCurrency: "EUR", asOf: date },
     ],
+    readAiBudgetSpend: [
+      OWNER,
+      [{ id: "fixture", dimension: "project", dimensionValue: "fixture", amount: new Decimal("1.00"), currency: "EUR" }],
+      date,
+      date,
+    ],
     readCostExplorer: [
       OWNER,
       { dimensions: {}, from: date, to: date, groupBy: "provider", page: 1 },

@@ -96,7 +96,7 @@ describe("buildAiCostOverview", () => {
   it("marks KPIs without a data source as not connected", () => {
     const overview = ok([entry("1.00")]);
 
-    for (const key of ["budget", "forecast", "requests", "tokens", "cache-rate"]) {
+    for (const key of ["forecast", "requests", "tokens", "cache-rate"]) {
       expect(kpi(overview, key)).toMatchObject({ state: "not-connected", value: null });
     }
     expect(overview.freshness.at(-1)).toMatchObject({
@@ -126,6 +126,28 @@ describe("buildAiCostOverview", () => {
     expect(kpi(overview, "spend")).toMatchObject({ state: "error", value: null });
     expect(overview.spendRows).toEqual([]);
     expect(overview.freshness).toEqual([expect.objectContaining({ state: "error" })]);
+  });
+
+  it("reads spend against the workspace budget, and no budget as no data rather than 0 %", () => {
+    expect(kpi(ok([entry("1.00")]), "budget")).toMatchObject({ state: "no-data", value: null });
+
+    const withBudget = buildAiCostOverview(
+      { state: "ok", entries: [entry("150.00")], sources: [] },
+      cycle,
+      TZ,
+      [{ cap: "200,00 €", spent: "150,00 €", percent: "75,0 %" }],
+    );
+    expect(kpi(withBudget, "budget")).toMatchObject({ state: "ok", value: "75,0 % de 200,00 €" });
+
+    const noSpendInCurrency = buildAiCostOverview(
+      { state: "ok", entries: [entry("1.00")], sources: [] },
+      cycle,
+      TZ,
+      [{ cap: "200,00 $US", spent: null, percent: null }],
+    );
+    expect(kpi(noSpendInCurrency, "budget").state).toBe("no-data");
+
+    expect(kpi(buildAiCostOverview({ state: "error" }, cycle, TZ), "budget").state).toBe("error");
   });
 
   it("measures cycle progress with today included", () => {

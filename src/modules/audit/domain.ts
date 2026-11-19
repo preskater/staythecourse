@@ -47,6 +47,9 @@ export const AUDIT_ACTIONS = [
   "rate.write",
   "rate.billing_write",
   "rate.internal_write",
+  "alert_rules.save",
+  "ai_budget.create",
+  "ai_budget.delete",
   "module.enable",
   "module.disable",
   // Provider connections and deferred reads.
@@ -81,6 +84,8 @@ export const AUDIT_ENTITY_TYPES = [
   "INTERNAL_COST_RATE",
   "BUSINESS_EXPENSE",
   "MODULE",
+  "ALERT_RULE",
+  "AI_BUDGET",
   "INTEGRATION",
   "OPERATION",
 ] as const;

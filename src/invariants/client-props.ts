@@ -45,6 +45,8 @@ export type ModuleIsPlain<M> = true extends {
 export type ClientModules = {
   "src/app/(app)/account/change-password-form.tsx": typeof import("@/app/(app)/account/change-password-form");
   "src/app/(app)/account/session-buttons.tsx": typeof import("@/app/(app)/account/session-buttons");
+  "src/app/(app)/ai-costs/ai-budget-form.tsx": typeof import("@/app/(app)/ai-costs/ai-budget-form");
+  "src/app/(app)/ai-costs/delete-ai-budget-button.tsx": typeof import("@/app/(app)/ai-costs/delete-ai-budget-button");
   "src/app/(app)/alerts/dismiss-alert-button.tsx": typeof import("@/app/(app)/alerts/dismiss-alert-button");
   "src/app/(app)/alerts/refresh-alerts-button.tsx": typeof import("@/app/(app)/alerts/refresh-alerts-button");
   "src/app/(app)/alerts/rules-form.tsx": typeof import("@/app/(app)/alerts/rules-form");

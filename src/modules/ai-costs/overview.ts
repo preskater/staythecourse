@@ -10,7 +10,7 @@ import { fromStoredActuality } from "./ledger";
  * Every KPI carries its formula, period and sources, and a state that keeps "no data",
  * "not connected" and an error apart: a missing figure is never rendered as zero.
  *
- * Only the ledger (`CostEntry`, M9-02) feeds figures today. Budgets (M12-03), the
+ * The ledger (`CostEntry`, M9-02) and the AI budgets (M12-03) feed figures today. The
  * billing-cycle forecast (M12-04) and usage metrics — requests, token classes, cache
  * hits — from the provider adapters (M11) have no data source yet, so those KPIs read
  * "not connected" until their milestone lands.
@@ -209,23 +209,50 @@ function cycleProgressKpi(cycle: BillingCycle): KpiDto {
   };
 }
 
+/** A workspace-wide AI budget with its cycle spend, already formatted (M12-03). */
+export type OverviewBudget = { cap: string; spent: string | null; percent: string | null };
+
+/**
+ * Spend against the workspace-wide AI budgets, one per currency. A budget whose
+ * currency has no entry this cycle reads "no spend", never 0 %.
+ */
+function budgetKpi(ledger: OverviewLedger, cycle: BillingCycle, budgets: readonly OverviewBudget[]): KpiDto {
+  const base = {
+    key: "budget",
+    label: "Dépense vs budget",
+    formula:
+      "Dépense du cycle ÷ budget IA « Tout l'espace », dans la devise du budget (aucune conversion).",
+    period: cyclePeriod(cycle),
+    sources: `${LEDGER_SOURCES} ; budgets IA`,
+  };
+
+  if (ledger.state === "error") return missing(base, "error", LEDGER_ERROR);
+  if (budgets.length === 0) {
+    return missing(base, "no-data", "Aucun budget IA pour tout l'espace : définissez-en un dans l'onglet Budgets.");
+  }
+  if (budgets.every((budget) => budget.percent === null)) {
+    return missing(base, "no-data", `Aucune dépense dans la devise du budget (${budgets.map((b) => b.cap).join(" · ")}).`);
+  }
+
+  return {
+    ...base,
+    state: "ok",
+    value: budgets
+      .map((budget) => (budget.percent === null ? `— de ${budget.cap}` : `${budget.percent} de ${budget.cap}`))
+      .join(" · "),
+    detail: budgets
+      .filter((budget) => budget.spent !== null)
+      .map((budget) => `${budget.spent} dépensés sur ${budget.cap}`)
+      .join(" · "),
+  };
+}
+
 /** KPIs whose data source arrives with a later milestone: always "not connected" today. */
 function pendingKpis(cycle: BillingCycle): KpiDto[] {
   const period = cyclePeriod(cycle);
   const usage = "Adaptateurs de consommation des fournisseurs IA (non connectés)";
 
   return [
-    missing(
-      {
-        key: "budget",
-        label: "Dépense vs budget",
-        formula: "Dépense du cycle ÷ budget IA du cycle, par devise.",
-        period,
-        sources: "Budgets IA",
-      },
-      "not-connected",
-      "Aucun budget IA ne peut encore être défini.",
-    ),
     missing(
       {
         key: "forecast",
@@ -313,10 +340,16 @@ export function buildAiCostOverview(
   ledger: OverviewLedger,
   cycle: BillingCycle,
   timeZone: string,
+  budgets: readonly OverviewBudget[] = [],
 ): AiCostOverviewDto {
   return {
     cycleLabel: cyclePeriod(cycle),
-    kpis: [spendKpi(ledger, cycle), cycleProgressKpi(cycle), ...pendingKpis(cycle)],
+    kpis: [
+      spendKpi(ledger, cycle),
+      cycleProgressKpi(cycle),
+      budgetKpi(ledger, cycle, budgets),
+      ...pendingKpis(cycle),
+    ],
     spendRows: ledger.state === "ok" ? spendRows(ledger.entries) : [],
     freshness: freshnessRows(ledger, timeZone),
   };

@@ -41,6 +41,8 @@ export const ALERT_KINDS = [
   "UNUSUAL_EXPENSE",
   "STALE_INTEGRATION",
   "OVERDUE_EVENT",
+  "AI_BUDGET_OVERRUN",
+  "AI_BUDGET_THRESHOLD",
 ] as const;
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
@@ -55,6 +57,8 @@ export const ALERT_KIND_MODULES: Record<AlertKind, ModuleKey> = {
   UNUSUAL_EXPENSE: "budget",
   STALE_INTEGRATION: "development",
   OVERDUE_EVENT: "real-estate",
+  AI_BUDGET_OVERRUN: "ai-costs",
+  AI_BUDGET_THRESHOLD: "ai-costs",
 };
 
 export function isAlertVisible(kind: AlertKind, modules: readonly ModuleKey[]): boolean {
@@ -68,6 +72,8 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   UNUSUAL_EXPENSE: "Dépense au-dessus du seuil",
   STALE_INTEGRATION: "Synchronisation ancienne",
   OVERDUE_EVENT: "Échéance dépassée",
+  AI_BUDGET_OVERRUN: "Dépassement de budget IA",
+  AI_BUDGET_THRESHOLD: "Seuil de budget IA atteint",
 };
 
 /** The lifecycle. Kept in sync with the `AlertStatus` enum in the schema. */
@@ -359,6 +365,64 @@ function describeOverdueEvent(inputs: z.infer<typeof OVERDUE_EVENT_INPUTS>): Des
   };
 }
 
+const AI_BUDGET_INPUTS = z.object({
+  scope: z.string(),
+  currency: z.string(),
+  month: z.string(),
+  planned: z.string(),
+  actual: z.string(),
+});
+
+const AI_BUDGET_OVERRUN_INPUTS = AI_BUDGET_INPUTS.extend({
+  overrun: z.string(),
+  overrunPercent: z.string(),
+});
+
+const AI_BUDGET_THRESHOLD_INPUTS = AI_BUDGET_INPUTS.extend({
+  percent: z.string(),
+  thresholdPercent: z.string(),
+});
+
+function monthLabelOf(monthKey: string): string {
+  try {
+    const { year, month } = parseMonthKey(monthKey);
+    return formatMonthLabel(year, month);
+  } catch {
+    return monthKey;
+  }
+}
+
+function describeAiBudgetOverrun(inputs: z.infer<typeof AI_BUDGET_OVERRUN_INPUTS>): DescribedAlert {
+  const planned = money(inputs.planned, inputs.currency);
+  const actual = money(inputs.actual, inputs.currency);
+  const overrun = money(inputs.overrun, inputs.currency);
+
+  if (planned === null || actual === null || overrun === null) {
+    return unreadable(ALERT_KIND_LABELS.AI_BUDGET_OVERRUN);
+  }
+
+  return {
+    title: ALERT_KIND_LABELS.AI_BUDGET_OVERRUN,
+    reason: `Budget IA ${inputs.scope} (${inputs.currency}, ${monthLabelOf(inputs.month)}) : ${actual} dépensés pour ${planned} prévus, soit un dépassement de ${overrun} (${frenchNumber(inputs.overrunPercent)} %).`,
+    tone: "negative",
+  };
+}
+
+function describeAiBudgetThreshold(inputs: z.infer<typeof AI_BUDGET_THRESHOLD_INPUTS>): DescribedAlert {
+  const planned = money(inputs.planned, inputs.currency);
+  const actual = money(inputs.actual, inputs.currency);
+
+  if (planned === null || actual === null) {
+    return unreadable(ALERT_KIND_LABELS.AI_BUDGET_THRESHOLD);
+  }
+
+  return {
+    title: ALERT_KIND_LABELS.AI_BUDGET_THRESHOLD,
+    reason: `Budget IA ${inputs.scope} (${inputs.currency}, ${monthLabelOf(inputs.month)}) : ${actual} dépensés pour ${planned} prévus, soit ${frenchNumber(inputs.percent)} % — le seuil d'alerte de ${frenchNumber(inputs.thresholdPercent)} % est atteint, sans dépassement pour l'instant.`,
+    tone: "warning",
+  };
+}
+
 /** An alert whose stored inputs cannot be read is explained as such, never rendered blank. */
 function unreadable(title: string): DescribedAlert {
   return {
@@ -404,6 +468,14 @@ export function describeAlert(alert: { kind: AlertKind; inputs: unknown }): Desc
       const result = OVERDUE_EVENT_INPUTS.safeParse(value);
       return result.success ? describeOverdueEvent(result.data) : unreadable(ALERT_KIND_LABELS.OVERDUE_EVENT);
     },
+    AI_BUDGET_OVERRUN: (value) => {
+      const result = AI_BUDGET_OVERRUN_INPUTS.safeParse(value);
+      return result.success ? describeAiBudgetOverrun(result.data) : unreadable(ALERT_KIND_LABELS.AI_BUDGET_OVERRUN);
+    },
+    AI_BUDGET_THRESHOLD: (value) => {
+      const result = AI_BUDGET_THRESHOLD_INPUTS.safeParse(value);
+      return result.success ? describeAiBudgetThreshold(result.data) : unreadable(ALERT_KIND_LABELS.AI_BUDGET_THRESHOLD);
+    },
   };
 
   return parsed[alert.kind](alert.inputs);
@@ -443,6 +515,10 @@ export const ALERT_RULE_DESCRIPTIONS: Record<AlertKind, string> = {
     "Déclenche quand la dernière synchronisation réussie d'une connexion dépasse le seuil en jours. Une connexion jamais synchronisée n'est pas « ancienne » : elle est signalée sur la page Intégrations.",
   OVERDUE_EVENT:
     "Déclenche quand une échéance de flux immobilier est dépassée et non réglée depuis plus de jours que la grâce accordée. La grâce de zéro déclenche dès le lendemain de l'échéance.",
+  AI_BUDGET_OVERRUN:
+    "Déclenche quand la dépense IA du mois civil (entrées du registre dont la période commence dans le mois, remboursements déduits) dépasse un budget IA (onglet Budgets des Coûts IA), dans sa devise — aucune conversion. La marge est le pourcentage de dépassement à partir duquel l'alerte apparaît. Un budget sans aucune entrée ce mois-ci reste silencieux.",
+  AI_BUDGET_THRESHOLD:
+    "Déclenche quand la dépense IA du mois atteint le pourcentage configuré d'un budget IA, sans l'avoir encore dépassé. Elle se résout d'elle-même dès que le dépassement prend le relais. Un budget sans aucune entrée ce mois-ci reste silencieux.",
 };
 
 /** Applied when no row is stored yet, so the engine runs before any configuration. */
@@ -496,6 +572,23 @@ export const ALERT_RULE_DEFAULTS: Record<AlertKind, AlertRuleConfig> = {
     thresholdCurrency: null,
     thresholdPercent: null,
     thresholdDays: 0,
+  },
+  AI_BUDGET_OVERRUN: {
+    kind: "AI_BUDGET_OVERRUN",
+    enabled: true,
+    thresholdAmount: null,
+    thresholdCurrency: null,
+    thresholdPercent: new Decimal(0),
+    thresholdDays: null,
+  },
+  AI_BUDGET_THRESHOLD: {
+    kind: "AI_BUDGET_THRESHOLD",
+    enabled: true,
+    thresholdAmount: null,
+    thresholdCurrency: null,
+    // Same preventive level as the personal budgets.
+    thresholdPercent: new Decimal(80),
+    thresholdDays: null,
   },
 };
 
@@ -684,6 +777,14 @@ export const alertRulesInputSchema = z.object({
     enabled: z.boolean(),
     thresholdDays: optionalDaysField,
   }),
+  aiBudgetOverrun: z.object({
+    enabled: z.boolean(),
+    thresholdPercent: optionalPercentField,
+  }),
+  aiBudgetThreshold: z.object({
+    enabled: z.boolean(),
+    thresholdPercent: optionalPercentField,
+  }),
 });
 
 export type AlertRulesInput = z.output<typeof alertRulesInputSchema>;
@@ -730,6 +831,14 @@ export function toAlertRulesFormValues(
     overdueEvent: {
       enabled: byKind.get("OVERDUE_EVENT")?.enabled ?? true,
       thresholdDays: byKind.get("OVERDUE_EVENT")?.thresholdDays?.toString() ?? "",
+    },
+    aiBudgetOverrun: {
+      enabled: byKind.get("AI_BUDGET_OVERRUN")?.enabled ?? true,
+      thresholdPercent: byKind.get("AI_BUDGET_OVERRUN")?.thresholdPercent?.toString() ?? "",
+    },
+    aiBudgetThreshold: {
+      enabled: byKind.get("AI_BUDGET_THRESHOLD")?.enabled ?? true,
+      thresholdPercent: byKind.get("AI_BUDGET_THRESHOLD")?.thresholdPercent?.toString() ?? "",
     },
   };
 }

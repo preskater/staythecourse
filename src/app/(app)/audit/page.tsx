@@ -50,6 +50,9 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   "rate.write": "Taux horaire enregistré",
   "rate.billing_write": "Tarif client enregistré",
   "rate.internal_write": "Coût interne enregistré",
+  "alert_rules.save": "Règles d'alerte enregistrées",
+  "ai_budget.create": "Budget IA enregistré",
+  "ai_budget.delete": "Budget IA supprimé",
   "module.enable": "Module activé",
   "module.disable": "Module désactivé",
   "integration.connect": "Connexion d'intégration",
@@ -70,6 +73,8 @@ const ENTITY_LABELS: Record<AuditEntityType, string> = {
   INTERNAL_COST_RATE: "Coût interne",
   BUSINESS_EXPENSE: "Charge récurrente",
   MODULE: "Module",
+  ALERT_RULE: "Règle d'alerte",
+  AI_BUDGET: "Budget IA",
   INTEGRATION: "Intégration",
   OPERATION: "Opération système",
 };
