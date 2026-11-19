@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const findManyMock = vi.fn();
 const deleteManyMock = vi.fn();
 const pruneSyncRunsMock = vi.fn();
+const pruneDeliveryHistoryMock = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   getPrisma: () => ({
@@ -12,12 +13,15 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/modules/integrations/repository", () => ({
   pruneSyncRuns: (...args: unknown[]) => pruneSyncRunsMock(...args),
+  pruneDeliveryHistory: (...args: unknown[]) => pruneDeliveryHistoryMock(...args),
 }));
 
 const {
   AUDIT_RETENTION_DAYS,
   cleanUpAuditEvents,
+  cleanUpDeliveryHistory,
   cleanUpSyncRuns,
+  DELIVERY_RETENTION_DAYS,
   retentionCutoff,
   SYNC_RUN_RETENTION_DAYS,
 } = await import("./retention");
@@ -95,5 +99,22 @@ describe("cleanUpAuditEvents", () => {
 
     expect(await cleanUpAuditEvents()).toEqual({ workspaces: 0, deleted: 0 });
     expect(deleteManyMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("cleanUpDeliveryHistory", () => {
+  it("prunes every workspace at the 13-month cutoff", async () => {
+    findManyMock.mockReset().mockResolvedValue([{ id: "ws-1" }, { id: "ws-2" }]);
+    pruneDeliveryHistoryMock.mockReset().mockResolvedValueOnce(3).mockResolvedValueOnce(0);
+    const now = new Date("2026-10-05T12:00:00.000Z");
+
+    const result = await cleanUpDeliveryHistory({ now });
+
+    expect(DELIVERY_RETENTION_DAYS).toBe(395);
+    expect(result).toEqual({ workspaces: 2, deleted: 3 });
+    expect(pruneDeliveryHistoryMock).toHaveBeenCalledWith({
+      workspaceId: "ws-1",
+      olderThan: new Date("2025-09-05T12:00:00.000Z"),
+    });
   });
 });

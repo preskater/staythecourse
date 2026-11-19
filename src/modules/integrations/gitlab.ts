@@ -5,6 +5,7 @@ import {
   ProviderError,
   requestJson,
   type CiSyncOutcome,
+  type DeliverySyncOutcome,
   type IntegrationAdapter,
   type IssueSyncOutcome,
   type MilestoneSyncOutcome,
@@ -223,6 +224,19 @@ export function createGitLabAdapter(): IntegrationAdapter {
         supported: false,
         milestones: [],
         checks: [],
+        fetchedAt: new Date(),
+        repositoriesScanned: 0,
+        repositoriesSkipped: 0,
+        repositoriesFailed: 0,
+      };
+    },
+
+    // GitLab delivery history arrives with M14-03.
+    async listDelivery(): Promise<DeliverySyncOutcome> {
+      return {
+        supported: false,
+        repositories: [],
+        windowStart: new Date(),
         fetchedAt: new Date(),
         repositoriesScanned: 0,
         repositoriesSkipped: 0,
