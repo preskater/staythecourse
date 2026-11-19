@@ -55,7 +55,13 @@ export const MODULE_CATALOG: Record<ModuleKey, ModuleDefinition> = {
     nav: { href: "/integrations", label: "Intégrations" },
     config: noConfig,
   },
-  "ai-costs": { label: "Coûts IA", requires: [], config: noConfig },
+  "ai-costs": {
+    label: "Coûts IA",
+    requires: [],
+    // The unallocated-cost inbox is the module's first page (M9-06).
+    nav: { href: "/ai-costs/inbox", label: "Coûts IA" },
+    config: noConfig,
+  },
   agents: { label: "Agents", requires: [], config: noConfig },
   "micro-business": {
     label: "Micro-entreprise",

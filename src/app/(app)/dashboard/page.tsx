@@ -39,9 +39,9 @@ export default async function DashboardPage() {
 		budgetActive ? listLabelHistory(user.workspace.id) : [],
 	]);
 
-	const { alerts, budget, budgetTracking, realEstate, integrations, monthKey, monthLabel } =
+	const { alerts, budget, budgetTracking, realEstate, integrations, aiCosts, monthKey, monthLabel } =
 		overview;
-	const noModule = !budget && !realEstate && !integrations;
+	const noModule = !budget && !realEstate && !integrations && !aiCosts;
 
 	return (
 		<>
@@ -288,6 +288,36 @@ export default async function DashboardPage() {
 			) : null}
 
 			<div className="grid gap-4 lg:grid-cols-2">
+				{aiCosts ? (
+					<Card
+						title="Coûts non répartis"
+						description="Part des coûts qu'aucun projet, client ou dépôt ne porte encore, par devise, sans conversion."
+					>
+						{aiCosts.length === 0 ? (
+							<p className="text-sm text-zinc-700 dark:text-zinc-300">
+								Aucun coût enregistré : il n&apos;y a rien à répartir.
+							</p>
+						) : (
+							<div className="flex flex-col gap-3">
+								<div className="grid gap-3 sm:grid-cols-2">
+									{aiCosts.map((summary) => (
+										<StatCard
+											key={summary.currency}
+											label={`Pas encore réparti (${summary.currency})`}
+											value={formatMoney({ amount: summary.unallocated, currency: summary.currency })}
+											tone={summary.unallocated.isZero() ? "positive" : "negative"}
+											hint={`Sur ${formatMoney({ amount: summary.total, currency: summary.currency })} de coûts · ${summary.draftCount} à revoir`}
+										/>
+									))}
+								</div>
+								<Link href="/ai-costs/inbox" className="text-sm underline underline-offset-2">
+									Ouvrir la boîte de réception des coûts
+								</Link>
+							</div>
+						)}
+					</Card>
+				) : null}
+
 				{realEstate ? (
 					<Card title="Immobilier" description="Biens suivis et flux rattachés.">
 						{realEstate.propertyCount === 0 ? (
