@@ -26,11 +26,11 @@ read-only; personal and company data are not mixed.
 
 ```text
 src/
-  app/(app)/         authenticated pages: account, alerts, budget (incl. /budget/import), dashboard, integrations, micro-business, real-estate
+  app/(app)/         authenticated pages: account, alerts, budget (incl. /budget/import and the Prêts tab), dashboard, integrations, micro-business, real-estate
   app/api/           Route Handlers: auth callbacks + CSV export (401 JSON, never a redirect)
   app/login/         sign-in page
   components/        shared UI (forms, server-rendered SVG charts, navigation)
-  modules/           business rules per module: identity, budget, real-estate,
+  modules/           business rules per module: identity, budget, loans, real-estate,
                      micro-business, integrations, alerts, dashboard, audit, catalog
                      (domain.ts / repository.ts inside each)
   lib/               db, env, money, dates, csv, crypto, auth helpers

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import Decimal from "decimal.js";
 import { parseDateOnly } from "@/lib/dates";
 import { assertCurrency, parseAmountInput } from "@/lib/money";
 
@@ -143,6 +144,56 @@ export const optionalAmount = z
       return parseAmountInput(value);
     } catch {
       ctx.addIssue({ code: "custom", message: AMOUNT_MESSAGE });
+      return z.NEVER;
+    }
+  });
+
+const RATE_MESSAGE = "Taux invalide. Exemples acceptés : 3,45, 3,45 % ou 3.45.";
+
+/**
+ * Parses a percentage typed by the owner.
+ *
+ * Rates are not amounts: they accept a trailing `%` and up to four decimals, while
+ * amounts stop at two. The French decimal comma is accepted, and `.` is read as a
+ * thousands separator when both separators are present, like `parseAmountInput`.
+ */
+export function parseRateInput(raw: string): Decimal {
+  const withoutPercent = raw
+    .replace(/[\s\u00A0\u202F]/g, "")
+    .replace(/%/g, "");
+
+  if (withoutPercent === "" || withoutPercent === "-" || withoutPercent === "+") {
+    throw new Error(`Invalid rate "${raw}": no digits found.`);
+  }
+
+  let normalized = withoutPercent;
+  if (normalized.includes(",") && normalized.includes(".")) {
+    normalized = normalized.replace(/\./g, "").replace(",", ".");
+  } else if (normalized.includes(",")) {
+    normalized = normalized.replace(",", ".");
+  }
+
+  if (!/^[+-]?\d+(\.\d{1,4})?$/.test(normalized)) {
+    throw new Error(`Invalid rate "${raw}": expected at most four decimals.`);
+  }
+
+  return new Decimal(normalized.startsWith("+") ? normalized.slice(1) : normalized);
+}
+
+/** An optional percentage: empty means "not recorded" rather than an error. */
+export const optionalRate = z
+  .string()
+  .trim()
+  .nullish()
+  .transform((value, ctx) => {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+
+    try {
+      return parseRateInput(value);
+    } catch {
+      ctx.addIssue({ code: "custom", message: RATE_MESSAGE });
       return z.NEVER;
     }
   });

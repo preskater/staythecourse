@@ -158,6 +158,27 @@ enum GoalStatus {
   ABANDONED
 }
 
+/// Why a loan exists. The reason is asked for explicitly so a car loan, a consumer
+/// credit and a property loan are told apart without guessing from their label.
+enum LoanPurpose {
+  MORTGAGE
+  VEHICLE
+  CONSUMER
+  STUDENT
+  BUSINESS
+  REAL_ESTATE_INVESTMENT
+  OTHER
+}
+
+/// How a loan's insurance is expressed. `NONE` is an explicit "no insurance", while
+/// a null mode means "not recorded yet" — never zero, and never the same as `NONE`.
+enum LoanInsuranceMode {
+  NONE
+  FIXED_MONTHLY
+  RATE_OF_PRINCIPAL
+  RATE_OF_BALANCE
+}
+
 /// The well-understood situations the alert engine watches. Deterministic rules only:
 /// no statistical heuristics in the first pass.
 enum AlertKind {
@@ -254,6 +275,7 @@ model Workspace {
   goals                Goal[]
   goalContributions    GoalContribution[]
   properties           Property[]
+  loans                Loan[]
   connections          IntegrationConnection[]
   clients              Client[]
   projects             Project[]
@@ -323,6 +345,7 @@ model User {
   goals                Goal[]
   goalContributions    GoalContribution[]
   properties           Property[]
+  loans                Loan[]
   connections          IntegrationConnection[]
   alerts               Alert[]
   alertRules           AlertRule[]
@@ -690,12 +713,13 @@ model Property {
   createdAt          DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime          @updatedAt @db.Timestamptz(3)
 
-  user       User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace  Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  cashflows  PropertyCashflow[]
-  loans      PropertyLoan[]
-  valuations PropertyValuation[]
-  events     PropertyEvent[]
+  user            User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace       Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  cashflows       PropertyCashflow[]
+  loans           PropertyLoan[]
+  registeredLoans Loan[]
+  valuations      PropertyValuation[]
+  events          PropertyEvent[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -755,6 +779,65 @@ model PropertyLoan {
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
+}
+
+/// A loan the owner tracks in a workspace: a mortgage, a car loan, a consumer credit,
+/// a student loan or a business loan.
+///
+/// This registry is deliberately independent from `PropertyLoan`: it records the terms
+/// the owner knows, with no schedule and no amortisation (M21-02 owns the computation).
+/// A missing rate, term or insurance reads "not recorded", never zero, and an amount is
+/// always an exact decimal in one explicit currency — no conversion ever happens here.
+///
+/// `outstandingBalance` is a manual snapshot with its observation day; it stays distinct
+/// from any figure a later milestone may compute. Archiving is a reversible stamp: an
+/// archived loan disappears from selection forms while its history stays readable.
+model Loan {
+  id                     String             @id @default(cuid())
+  workspaceId            String
+  /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
+  userId                 String?
+  label                  String
+  lender                 String?
+  notes                  String?
+  purpose                LoanPurpose        @default(OTHER)
+  currency               String             @default("EUR") @db.Char(3)
+  /// Positive magnitude: the amount borrowed.
+  initialPrincipal       Decimal            @db.Decimal(18, 2)
+  /// Annual rate as a percentage, at most four decimals; null = not recorded.
+  /// Precision 7 (not 6) so a recorded 100.0000 % still fits the column.
+  annualRate             Decimal?           @db.Decimal(7, 4)
+  /// Term in whole months; null = not recorded.
+  termMonths             Int?
+  startDate              DateTime?          @db.Date
+  firstDueDate           DateTime?          @db.Date
+  /// 1–31, clamped to the last day of short months when a due date is computed.
+  paymentDay             Int?
+  /// Deferral length in months, where only interest is paid.
+  interestOnlyMonths     Int                @default(0)
+  /// Null = the insurance is not recorded; `NONE` is an explicit no-insurance.
+  insuranceMode          LoanInsuranceMode?
+  /// Used by `FIXED_MONTHLY` only.
+  insuranceMonthlyAmount Decimal?           @db.Decimal(18, 2)
+  /// Annual percentage used by `RATE_OF_PRINCIPAL` or `RATE_OF_BALANCE`.
+  insuranceRate          Decimal?           @db.Decimal(7, 4)
+  /// Arrangement fees, positive; null = not recorded.
+  fees                   Decimal?           @db.Decimal(18, 2)
+  propertyId             String?
+  /// Stored balance snapshot; null means "not recorded yet".
+  outstandingBalance     Decimal?           @db.Decimal(18, 2)
+  /// Day the balance was observed; set together with it.
+  balanceAsOf            DateTime?          @db.Date
+  archivedAt             DateTime?          @db.Timestamptz(3)
+  createdAt              DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime           @updatedAt @db.Timestamptz(3)
+
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  property  Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([workspaceId, archivedAt])
 }
 
 /// A financial entry attached to a property.

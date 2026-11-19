@@ -62,6 +62,8 @@ export type ClientModules = {
   "src/app/(app)/budget/goal-contributions.tsx": typeof import("@/app/(app)/budget/goal-contributions");
   "src/app/(app)/budget/goal-form.tsx": typeof import("@/app/(app)/budget/goal-form");
   "src/app/(app)/budget/import/csv-importer.tsx": typeof import("@/app/(app)/budget/import/csv-importer");
+  "src/app/(app)/budget/loans/loan-archive-button.tsx": typeof import("@/app/(app)/budget/loans/loan-archive-button");
+  "src/app/(app)/budget/loans/loan-form.tsx": typeof import("@/app/(app)/budget/loans/loan-form");
   "src/app/(app)/budget/month-balance-chart.tsx": typeof import("@/app/(app)/budget/month-balance-chart");
   "src/app/(app)/budget/occurrence-actions.tsx": typeof import("@/app/(app)/budget/occurrence-actions");
   "src/app/(app)/budget/operations-table.tsx": typeof import("@/app/(app)/budget/operations-table");
