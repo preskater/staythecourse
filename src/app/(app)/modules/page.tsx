@@ -15,7 +15,7 @@ const CONSEQUENCES: Partial<Record<ModuleKey, string>> = {
   development:
     "Les connexions GitHub et GitLab disparaissent de la navigation, du tableau de bord et des alertes ; la synchronisation manuelle n'est plus proposée.",
   "ai-costs":
-    "L'import CSV de coûts disparaît de la navigation. Les coûts importés et les associations de colonnes sont conservés.",
+    "La boîte de réception des coûts, la carte « Coûts non répartis » du tableau de bord et l'import CSV disparaissent. Les coûts, leurs répartitions et les associations de colonnes sont conservés.",
   "micro-business":
     "Clients et projets disparaissent de la navigation. Les données sont conservées et réapparaissent dès la réactivation du module.",
 };

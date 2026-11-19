@@ -58,8 +58,8 @@ export const MODULE_CATALOG: Record<ModuleKey, ModuleDefinition> = {
   "ai-costs": {
     label: "Coûts IA",
     requires: [],
-    // The CSV import is the module's first page (M9-05); an overview arrives with M12-01.
-    nav: { href: "/ai-costs/import", label: "Coûts IA" },
+    // The unallocated-cost inbox is the module's first page (M9-06).
+    nav: { href: "/ai-costs/inbox", label: "Coûts IA" },
     config: noConfig,
   },
   agents: { label: "Agents", requires: [], config: noConfig },
