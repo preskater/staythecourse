@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { ProviderError } from "./adapter";
 import type { ProviderProject } from "./domain";
-import { DELIVERY_BOUNDS, DELIVERY_QUERY, listGitHubDelivery } from "./github-delivery";
+import { listGitHubDelivery } from "./github-delivery";
+import { DELIVERY_BOUNDS, DELIVERY_QUERY } from "./github-delivery.query";
 
 /** Fictitious repositories, logins and identifiers only; no test reaches the network. */
 const NOW = new Date("2026-06-30T12:00:00.000Z");

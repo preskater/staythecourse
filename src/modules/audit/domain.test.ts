@@ -126,6 +126,8 @@ describe("AUDIT_ACTIONS", () => {
       "revenue.write_off",
       "business_expense.create",
       "business_expense.delete",
+      "cost.allocate",
+      "cost.finalize",
       "rate.write",
       "rate.billing_write",
       "rate.internal_write",

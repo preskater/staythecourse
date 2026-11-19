@@ -28,6 +28,8 @@ import type {
 
 export type ProviderErrorCode =
   | "UNAUTHORIZED"
+  /** Credential valid but missing a permission (for example an AI usage-read scope). */
+  | "FORBIDDEN"
   | "NOT_FOUND"
   | "RATE_LIMITED"
   | "NETWORK"

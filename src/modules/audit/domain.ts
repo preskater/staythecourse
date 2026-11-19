@@ -43,6 +43,9 @@ export const AUDIT_ACTIONS = [
   // Recurring business expenses (M10-05): definitions, never ledger rows.
   "business_expense.create",
   "business_expense.delete",
+  // Unallocated-cost inbox (M9-06): bulk actions, counts and the policy version only.
+  "cost.allocate",
+  "cost.finalize",
   // Configuration that changes what the dashboard computes.
   "rate.write",
   "rate.billing_write",
@@ -80,6 +83,7 @@ export const AUDIT_ENTITY_TYPES = [
   "BILLING_RATE",
   "INTERNAL_COST_RATE",
   "BUSINESS_EXPENSE",
+  "COST_ENTRY",
   "MODULE",
   "INTEGRATION",
   "OPERATION",

@@ -42,6 +42,7 @@ import {
   type CostEntryStatus,
   type CostEntryTotals,
 } from "./ledger";
+import type { OverviewEntryRow, OverviewSourceRow } from "./overview";
 import { costMoney } from "./money";
 import {
   createCostSource,
@@ -966,4 +967,146 @@ export async function deleteCostAllocation(
 
     return count === 1;
   });
+}
+
+/**
+ * What the AI cost overview (M12-01) reads, workspace-scoped.
+ *
+ * `entries` are the entries whose period starts in `[start, end)`; an entry is
+ * counted in the cycle it starts in, so it never appears in two cycles. `sources`
+ * holds the latest capture of each source (kind + provider), over the whole ledger:
+ * freshness is about the source, not about this cycle.
+ *
+ * ponytail: entries are summed in memory; move to a SQL `SUM ... GROUP BY` if a
+ * cycle ever holds more than a few thousand entries.
+ */
+export async function readAiCostOverviewLedger(
+  workspaceId: string,
+  start: Date,
+  end: Date,
+): Promise<{ entries: OverviewEntryRow[]; sources: OverviewSourceRow[] }> {
+  const prisma = getPrisma();
+  const [entries, sources] = await Promise.all([
+    prisma.costEntry.findMany({
+      where: { workspaceId, periodStart: { gte: start, lt: end } },
+      select: { amount: true, currency: true, actuality: true, periodEnd: true },
+    }),
+    prisma.costEntry.findMany({
+      where: { workspaceId },
+      distinct: ["sourceKind", "sourceProvider"],
+      orderBy: { sourceCapturedAt: "desc" },
+      select: { sourceKind: true, sourceProvider: true, sourceCapturedAt: true },
+    }),
+  ]);
+
+  return {
+    entries: entries as OverviewEntryRow[],
+    sources: sources as OverviewSourceRow[],
+  };
+}
+
+/* Unallocated-cost inbox (M9-06). */
+
+export const INBOX_PAGE_SIZE = 200;
+
+export type InboxEntry = {
+  readonly entry: CostEntry;
+  readonly totals: CostEntryTotals;
+};
+
+/**
+ * Draft entries, newest period first, with their allocated and unallocated split.
+ * Finalized entries are history: they never come back into the inbox. `truncated`
+ * says the bound cut the list, so the page never presents a prefix as everything.
+ */
+export async function listInboxEntries(
+  workspaceId: string,
+  options: { take?: number } = {},
+): Promise<{ entries: InboxEntry[]; truncated: boolean }> {
+  const take = Math.min(Math.max(1, options.take ?? INBOX_PAGE_SIZE), INBOX_PAGE_SIZE);
+  const rows = (await getPrisma().costEntry.findMany({
+    where: { workspaceId, status: "DRAFT" },
+    orderBy: [{ periodStart: "desc" }, { createdAt: "desc" }, { id: "asc" }],
+    take: take + 1,
+    select: { ...COST_ENTRY_SELECT, allocations: { select: COST_ALLOCATION_SELECT } },
+  })) as (CostEntryRow & { allocations: CostAllocationRow[] })[];
+
+  const entries = rows.slice(0, take).map((row) => {
+    const entry = toCostEntry(row);
+    const allocations = row.allocations.map((allocation) =>
+      toCostAllocation(allocation, entry.amount.currency),
+    );
+    return { entry, totals: totalsOf(entry, allocations) };
+  });
+
+  return { entries, truncated: rows.length > take };
+}
+
+export type UnallocatedSummary = {
+  readonly currency: Currency;
+  readonly total: Decimal;
+  readonly allocated: Decimal;
+  /** `total - allocated`, finalized entries included: what no dimension carries yet. */
+  readonly unallocated: Decimal;
+  readonly draftCount: number;
+  readonly entryCount: number;
+};
+
+/**
+ * Workspace-wide totals per currency, aggregated in the database rather than summed
+ * from a bounded page. Currencies are never added together.
+ */
+export async function summarizeUnallocatedCosts(
+  workspaceId: string,
+): Promise<UnallocatedSummary[]> {
+  const prisma = getPrisma();
+  const groups = await prisma.costEntry.groupBy({
+    by: ["currency", "status"],
+    where: { workspaceId },
+    orderBy: [{ currency: "asc" }, { status: "asc" }],
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
+  const entryGroups = groups as unknown as {
+    currency: string;
+    status: string;
+    _sum: { amount: Decimal.Value | null };
+    _count: { _all: number };
+  }[];
+
+  const allocatedRows = await prisma.$queryRaw<{ currency: string; allocated: Decimal.Value }[]>`
+    SELECT e."currency" AS "currency", COALESCE(SUM(a."amount"), 0) AS "allocated"
+    FROM "CostAllocation" a
+    JOIN "CostEntry" e ON e."id" = a."entryId"
+    WHERE e."workspaceId" = ${workspaceId}
+    GROUP BY e."currency"`;
+
+  const allocatedByCurrency = new Map(
+    allocatedRows.map((row) => [row.currency.trim(), new Decimal(row.allocated.toString())]),
+  );
+  const byCurrency = new Map<string, { total: Decimal; draftCount: number; entryCount: number }>();
+
+  for (const group of entryGroups) {
+    const currency = group.currency.trim();
+    const current = byCurrency.get(currency) ?? { total: new Decimal(0), draftCount: 0, entryCount: 0 };
+    byCurrency.set(currency, {
+      total: current.total.plus(new Decimal((group._sum.amount ?? 0).toString())),
+      draftCount: current.draftCount + (group.status === "DRAFT" ? group._count._all : 0),
+      entryCount: current.entryCount + group._count._all,
+    });
+  }
+
+  return [...byCurrency.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, { total, draftCount, entryCount }]) => {
+      const allocated = allocatedByCurrency.get(currency) ?? new Decimal(0);
+      return {
+        currency: costMoney(total, currency).currency,
+        total,
+        allocated,
+        unallocated: total.minus(allocated),
+        draftCount,
+        entryCount,
+      };
+    });
 }

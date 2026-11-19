@@ -13,13 +13,13 @@ the pages that consume it.
 
 | Module | Responsibility | Key files |
 | --- | --- | --- |
-| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) and their permission presets. No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts`, `permissions.ts` |
+| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`). No public sign-up: the account, its personal workspace and the initial module set are created by the seed script. | `repository.ts`, `workspace.ts` |
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
 | `micro-business` | Clients and projects of a commercial workspace: billing model, status, reference currency, key dates, archive/restore. No revenue entry or invoice yet (M10-02). | `domain.ts`, `repository.ts` |
-| `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period), their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions, and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). Conservation is exact in cents; finalized entries are immutable. No provider call yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `exchange.ts`, `repository.ts` |
-| `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots, GitHub delivery history (M14-02). | `domain.ts`, `adapter.ts`, `github.ts`, `github-delivery.ts`, `gitlab.ts`, `repository.ts` |
+| `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period), their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions, and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). Conservation is exact in cents; finalized entries are immutable. No provider call yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `exchange.ts`, `overview.ts`, `repository.ts` |
+| `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots, GitHub delivery history (M14-02). | `domain.ts`, `adapter.ts`, `github.ts`, `github-delivery.ts`, `github-delivery.query.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
 | `dashboard` | Read-only aggregation for the home page. | `queries.ts` |
@@ -962,8 +962,10 @@ beside its fields.
   layout from the active modules. Disabling only flips `enabled`: records and
   configuration stay.
   Enabling writes the activation row only. The migration enables `budget`,
-  `real-estate` and `development` on every existing workspace. The dashboard, the alerts
-  and the account page are not modules, but the dashboard reads and shows only the
+  `real-estate` and `development` on every existing workspace. The seed enables the same
+  default set on a new personal workspace, or the keys in `SEED_WORKSPACE_MODULES`; it
+  only adds missing rows, so a module disabled later stays disabled. The dashboard, the
+  alerts and the account page are not modules, but the dashboard reads and shows only the
   sections of active modules, and the alert page, banner and export hide the alerts of
   inactive ones (`ALERT_KIND_MODULES`; the stored episodes are left untouched). The
   `/modules` page lets an `OWNER` or `ADMIN` enable or disable the modules that have a
@@ -1310,7 +1312,7 @@ repository whose result is already normalised to the stored fields.
 
 GitHub pull requests, releases and deployments are read through the **GraphQL API**,
 one query per repository on the same bounded selection as issues
-(`src/modules/integrations/github-delivery.ts`). REST would need one request per pull
+(`src/modules/integrations/github-delivery.ts`, query in `github-delivery.query.ts`). REST would need one request per pull
 request for its files, reviews and commits; GraphQL returns them in one read-only
 `query` (no mutation is ever sent, the token stays read-only).
 
@@ -1395,8 +1397,12 @@ age is not restorability: that verification is SO-04.
   deleted, each with its usage counts shown first. Properties and cashflow entries
   still cannot be edited or deleted from the interface.
 - No document/attachment storage.
-- The `ai-costs` module persists cost entries and allocations, but there is no cost
-  UI, no import, no provider synchronisation, no exchange-rate conversion and no
+- The `ai-costs` module persists cost entries and allocations. Its only page is the
+  read-only overview `/ai-costs` (M12-01): spend per currency and actuality for the
+  current calendar month (an entry counts in the month its period starts in), cycle
+  progress and per-source freshness. Budget, forecast, requests, token classes and
+  cache rate read "not connected" until M12-03, M12-04 and the M11 adapters land.
+  There is no cost entry UI, no import, no provider synchronisation, no exchange-rate conversion and no
   profitability calculation yet. Finalization is per entry, not a separate
   period-closing record: every entry of a period must be finalized to close it.
 - The `micro-business` module ships clients and projects only: no revenue entry,
