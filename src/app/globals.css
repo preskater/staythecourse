@@ -62,3 +62,17 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Single-choice selects draw their own chevron: the native arrow sits flush against the
+ * right border and its position differs between browsers. Left unlayered on purpose so
+ * the room kept for the chevron wins over `px-*` utilities (`inputClass`).
+ */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2371717a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem 1rem;
+}

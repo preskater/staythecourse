@@ -286,6 +286,7 @@ model Workspace {
   auditEvents          AuditEvent[]
   exchangeRates        ExchangeRateSnapshot[]
   costEntries          CostEntry[]
+  costImportMappings   CostImportMapping[]
   agents               Agent[]
   allocationPolicies   AllocationPolicy[]
 }
@@ -1411,6 +1412,9 @@ model CostEntry {
   sourceRowNumber  Int?
   sourceEnteredBy  String?
   sourceCapturedAt DateTime        @db.Timestamptz(3)
+  /// CSV imports only (M9-05): hash of the source and the row's reference or
+  /// fingerprint. Unique per workspace, so re-importing a file creates nothing.
+  importKey        String?
   /// First calendar day covered, inclusive.
   periodStart      DateTime        @db.Date
   /// Last calendar day covered, inclusive.
@@ -1433,6 +1437,7 @@ model CostEntry {
   workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   allocations CostAllocation[]
 
+  @@unique([workspaceId, importKey])
   @@index([workspaceId, periodStart])
   @@index([workspaceId, status])
   @@index([workspaceId, projectId])
@@ -1473,6 +1478,27 @@ model CostAllocation {
   @@index([projectId])
   @@index([clientId])
   @@index([repository])
+}
+
+/// A reusable CSV column mapping, one per source and workspace (M9-05). Holds column
+/// headers and import settings only: never file content, amounts or secrets.
+model CostImportMapping {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  /// Free name of the source, for example `OpenAI factures`.
+  source          String
+  delimiter       String
+  hasHeader       Boolean  @default(true)
+  /// Canonical field → header name (see `src/modules/ai-costs/import.ts`).
+  columns         Json
+  /// Used when the file has no currency column.
+  defaultCurrency String?  @db.Char(3)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, source])
 }
 
 /// A named, workspace-scoped way to split costs (M9-03). Never deleted: archiving

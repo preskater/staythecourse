@@ -168,6 +168,23 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       "fixture",
       { amount: new Decimal("1.00"), dimensions: { projectId: "fixture" } },
     ],
+    createImportedCostEntries: [
+      OWNER,
+      [
+        {
+          importKey: "fixture",
+          input: {
+            amount: "12.34",
+            currency: "EUR",
+            actuality: "observed",
+            source: { kind: "import", importId: "fixture", rowNumber: 2, capturedAt: date },
+            periodStart: date,
+            periodEnd: date,
+            notes: "fixture",
+          },
+        },
+      ],
+    ],
     createAgent: [
       OWNER,
       {
