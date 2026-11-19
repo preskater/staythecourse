@@ -42,6 +42,17 @@ import {
   type CostEntryStatus,
   type CostEntryTotals,
 } from "./ledger";
+import {
+  clampPage,
+  EXPLORER_DIMENSIONS,
+  EXPLORER_PAGE_SIZE,
+  explorerWhere,
+  groupColumn,
+  type ExplorerEntryRow,
+  type ExplorerFilters,
+  type ExplorerGroupRow,
+  type ExplorerOptions,
+} from "./explorer";
 import type { OverviewEntryRow, OverviewSourceRow } from "./overview";
 import { costMoney } from "./money";
 import {
@@ -1000,4 +1011,92 @@ export async function readAiCostOverviewLedger(
     entries: entries as OverviewEntryRow[],
     sources: sources as OverviewSourceRow[],
   };
+}
+
+/** Bound on the values offered per dimension in the explorer's filters. */
+const EXPLORER_OPTION_LIMIT = 200;
+
+/**
+ * The values each explorer dimension holds in this workspace, for the filter lists and
+ * to validate a value read from the URL (M12-02).
+ */
+export async function listExplorerOptions(workspaceId: string): Promise<ExplorerOptions> {
+  const prisma = getPrisma();
+  const lists = await Promise.all(
+    EXPLORER_DIMENSIONS.map(async ({ column }) => {
+      const rows = (await prisma.costEntry.findMany({
+        where: { workspaceId, [column]: { not: null } },
+        distinct: [column],
+        orderBy: { [column]: "asc" },
+        take: EXPLORER_OPTION_LIMIT,
+        select: { [column]: true },
+      })) as unknown as Record<string, string>[];
+      return rows.map((row) => row[column]);
+    }),
+  );
+
+  return Object.fromEntries(
+    EXPLORER_DIMENSIONS.map(({ param }, index) => [param, lists[index]]),
+  ) as unknown as ExplorerOptions;
+}
+
+/**
+ * One explorer view: totals grouped by the chosen dimension and currency, and one
+ * bounded page of the underlying entries. Both read the same filter, so the entries
+ * always add up to the groups.
+ */
+export async function readCostExplorer(
+  workspaceId: string,
+  filters: ExplorerFilters,
+): Promise<{ groups: ExplorerGroupRow[]; entries: ExplorerEntryRow[]; total: number; page: number; pageCount: number }> {
+  const prisma = getPrisma();
+  const where = explorerWhere(workspaceId, filters);
+  const column = groupColumn(filters);
+
+  const [grouped, total] = await Promise.all([
+    prisma.costEntry.groupBy({
+      by: [column, "currency"],
+      where,
+      _sum: { amount: true },
+      _count: { _all: true },
+    }),
+    prisma.costEntry.count({ where }),
+  ]);
+  const { page, pageCount } = clampPage(filters.page, total);
+  const entries = (await prisma.costEntry.findMany({
+    where,
+    orderBy: [{ periodStart: "desc" }, { id: "desc" }],
+    skip: (page - 1) * EXPLORER_PAGE_SIZE,
+    take: EXPLORER_PAGE_SIZE,
+    select: {
+      id: true,
+      amount: true,
+      currency: true,
+      actuality: true,
+      sourceKind: true,
+      sourceProvider: true,
+      sourceExternalId: true,
+      sourceImportId: true,
+      sourceRowNumber: true,
+      sourceCapturedAt: true,
+      periodStart: true,
+      periodEnd: true,
+      projectId: true,
+      clientId: true,
+      developerId: true,
+      repository: true,
+      agentId: true,
+      environment: true,
+      status: true,
+    },
+  })) as ExplorerEntryRow[];
+
+  const groups = (grouped as unknown as Record<string, unknown>[]).map((row) => ({
+    value: (row[column] as string | null) ?? null,
+    currency: row.currency as string,
+    amount: ((row._sum as { amount: Decimal.Value | null }).amount ?? 0) as Decimal.Value,
+    count: (row._count as { _all: number })._all,
+  }));
+
+  return { groups, entries, total, page, pageCount };
 }

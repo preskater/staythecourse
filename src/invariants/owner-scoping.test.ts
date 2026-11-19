@@ -182,6 +182,10 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       OWNER,
       { baseCurrency: "USD", quoteCurrency: "EUR", asOf: date },
     ],
+    readCostExplorer: [
+      OWNER,
+      { dimensions: {}, from: date, to: date, groupBy: "provider", page: 1 },
+    ],
   };
   if (special[name]) return special[name];
   return /^async function \w+\(\s*input\b/.test(fn.toString())
