@@ -17,8 +17,9 @@ import { resolveActiveWorkspace } from "@/modules/identity/workspace";
 /**
  * Server-side Auth.js instance.
  *
- * A single owner signs in with an email and a password. There is no public
- * sign-up: accounts are created by `npm run db:seed`.
+ * People sign in with an email and a password. There is no public sign-up: the seed
+ * creates the first account, and a valid single-use invitation creates the others
+ * (M8-01). The credentials provider works the same for both.
  */
 const credentialsSchema = z.object({
   email: z.string().min(3),
