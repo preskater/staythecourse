@@ -77,6 +77,8 @@ export type CostAllocation = {
   readonly entryId: string;
   readonly amount: Money;
   readonly dimensions: CostDimensions;
+  /** The allocation policy version that produced this split; null when entered by hand. */
+  readonly policyVersionId: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 };
