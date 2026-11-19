@@ -1490,6 +1490,8 @@ model CostImportMapping {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, source])
+}
+
 /// A named, workspace-scoped way to split costs (M9-03). Never deleted: archiving
 /// hides it from new applications while its versions keep explaining past splits.
 model AllocationPolicy {
