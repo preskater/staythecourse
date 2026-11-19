@@ -28,7 +28,7 @@ import {
   computeLoanTotals,
   toLoanFormInitialValues,
 } from "@/modules/real-estate/loans";
-import type { PropertyOccupancy } from "@/modules/real-estate/domain";
+import { PROPERTY_OCCUPANCY_LABELS as OCCUPANCY_LABELS } from "@/modules/real-estate/domain";
 import {
   filterPropertyEvents,
   PROPERTY_EVENT_STATUSES,
@@ -47,14 +47,6 @@ export const dynamic = "force-dynamic";
 
 /** Enough recent operations to pick from without loading the whole history. */
 const TRANSACTION_OPTION_LIMIT = 100;
-
-const OCCUPANCY_LABELS: Record<PropertyOccupancy, string> = {
-  RENTED: "Loué",
-  VACANT: "Vacant",
-  OWNER_OCCUPIED: "Occupé par le propriétaire",
-  SEASONAL: "Saisonnier",
-  OTHER: "Autre",
-};
 
 /** A financing figure that was never recorded reads "inconnu", never zero. */
 function formatOptionalMoney(amount: Decimal | null, currency: Currency): string {
@@ -223,12 +215,13 @@ export default async function RealEstatePage({
             >
               Calendrier
             </Link>
-            <Link
+            <a
               href="/api/export/properties"
+              download
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               Exporter en CSV
-            </Link>
+            </a>
           </>
         }
       />

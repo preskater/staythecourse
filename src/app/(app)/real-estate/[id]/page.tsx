@@ -17,7 +17,7 @@ import { hasModule } from "@/modules/catalog/catalog";
 import { formatDateOnly, toDateOnlyString } from "@/lib/dates";
 import { formatMoney, type Currency } from "@/lib/money";
 import type Decimal from "decimal.js";
-import type { PropertyOccupancy } from "@/modules/real-estate/domain";
+import { PROPERTY_OCCUPANCY_LABELS as OCCUPANCY_LABELS } from "@/modules/real-estate/domain";
 import { toPropertyEventFormValues } from "@/modules/real-estate/events";
 import {
   findPropertyEvent,
@@ -46,14 +46,6 @@ import { ValuationForm } from "../valuation-form";
 import { PropertyEventsSection } from "../events-section";
 
 export const dynamic = "force-dynamic";
-
-const OCCUPANCY_LABELS: Record<PropertyOccupancy, string> = {
-  RENTED: "Loué",
-  VACANT: "Vacant",
-  OWNER_OCCUPIED: "Occupé par le propriétaire",
-  SEASONAL: "Saisonnier",
-  OTHER: "Autre",
-};
 
 const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
   SOLD: "Vendu",

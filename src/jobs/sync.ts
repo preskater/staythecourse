@@ -18,6 +18,7 @@ import {
   markSyncSuccess,
   saveCacheChecks,
   saveCiRuns,
+  saveDelivery,
   saveIssues,
   saveMilestones,
   saveSnapshots,
@@ -279,12 +280,47 @@ export async function synchroniseConnection(
       updated += savedCi.updated;
     }
 
-    // Both scans cover the same repository selection, so their skipped and failed
+    // Delivery history (M14-02), same repository selection. A refused repository keeps
+    // its earlier history and counts as failed, so the run reads as partial instead of
+    // complete; an exhausted quota stops the run like every other step.
+    const delivery = await adapter.listDelivery({
+      token: connection.token,
+      instanceUrl: connection.instanceUrl,
+      owner: connection.externalOwner,
+      projects: outcome.projects,
+      fetchImpl: retryingFetch.fetchImpl,
+    });
+
+    if (delivery.supported) {
+      const savedDelivery = await saveDelivery({
+        connectionId: connection.id,
+        provider: connection.provider,
+        results: delivery.repositories,
+        fetchedAt: delivery.fetchedAt,
+      });
+      fetched += delivery.repositories.reduce(
+        (sum, result) =>
+          sum + (result.read ? result.pullRequests.length + result.releases.length + result.deployments.length : 0),
+        0,
+      );
+      created += savedDelivery.created;
+      updated += savedDelivery.updated;
+    }
+
+    // The scans cover the same repository selection, so their skipped and failed
     // counts describe the same set of repositories: keep the maximum instead of
     // counting the same repository twice. Either number means "not read" — the data
     // of those repositories is unknown, not empty.
-    const skipped = Math.max(issues.repositoriesSkipped, milestones.repositoriesSkipped);
-    const failed = Math.max(issues.repositoriesFailed, milestones.repositoriesFailed);
+    const skipped = Math.max(
+      issues.repositoriesSkipped,
+      milestones.repositoriesSkipped,
+      delivery.repositoriesSkipped,
+    );
+    const failed = Math.max(
+      issues.repositoriesFailed,
+      milestones.repositoriesFailed,
+      delivery.repositoriesFailed,
+    );
     const status: SyncRunStatus = skipped > 0 || failed > 0 ? "PARTIAL" : "SUCCESS";
 
     await markSyncSuccess(connection.id, outcome.fetchedAt);

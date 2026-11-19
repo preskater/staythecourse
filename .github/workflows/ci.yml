@@ -18,6 +18,11 @@ jobs:
       INTEGRATION_ENCRYPTION_KEY: Y2ktb25seS1maWN0aXRpb3VzLWtleS0zMi1ieXRlcy0=
       NEXT_PUBLIC_DEFAULT_CURRENCY: EUR
       NEXT_PUBLIC_DEFAULT_TIME_ZONE: Europe/Paris
+      # Fictitious owner for the seed steps below. Never a real address or password.
+      SEED_OWNER_EMAIL: owner@example.test
+      SEED_OWNER_PASSWORD: Fictitious-Password-2026
+      SEED_OWNER_NAME: Proprietaire fictif
+      SEED_WORKSPACE_MODULES: budget,real-estate,development
 
     services:
       postgres:
@@ -60,8 +65,48 @@ jobs:
       - name: Apply migrations on a fresh database
         run: npm run db:deploy
 
+      # M7-06: the seed runs on every `up`. A second run must add nothing, and the
+      # check proves one owner, one personal workspace with an OWNER membership and the
+      # selected module rows.
+      - name: Seed twice and check idempotency
+        run: |
+          npm run db:seed
+          npm run db:seed
+          npm run db:verify-seed
+
       - name: Build
         run: npm run build
+
+      # M7-06 boot check: the seeded database must serve the sign-in page, keep the
+      # dashboard guarded without a session, and let the seeded owner in.
+      - name: Boot check on the seeded stack
+        run: |
+          ./node_modules/.bin/next start > /tmp/dashboard-start.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://127.0.0.1:3000/login && break
+            sleep 1
+          done
+
+          curl -sf -o /dev/null -w '/login %{http_code}\n' http://127.0.0.1:3000/login
+          ANONYMOUS="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/dashboard)"
+          echo "/dashboard (signed out) $ANONYMOUS"
+          [ "$ANONYMOUS" = "307" ] || { echo "FAIL: /dashboard must redirect a signed-out visitor"; cat /tmp/dashboard-start.log; exit 1; }
+
+          COOKIES="$(mktemp)"
+          CSRF="$(curl -s -c "$COOKIES" http://127.0.0.1:3000/api/auth/csrf | sed 's/.*"csrfToken":"\([^"]*\)".*/\1/')"
+          SIGN_IN="$(curl -s -b "$COOKIES" -c "$COOKIES" -o /dev/null -w '%{http_code}' \
+            -X POST http://127.0.0.1:3000/api/auth/callback/credentials \
+            --data-urlencode "csrfToken=$CSRF" \
+            --data-urlencode "email=$SEED_OWNER_EMAIL" \
+            --data-urlencode "password=$SEED_OWNER_PASSWORD" \
+            --data-urlencode "callbackUrl=http://127.0.0.1:3000/dashboard")"
+          echo "sign-in $SIGN_IN"
+          [ "$SIGN_IN" = "302" ] || { echo "FAIL: the seeded owner cannot sign in"; cat /tmp/dashboard-start.log; exit 1; }
+
+          curl -sf -b "$COOKIES" -o /dev/null -w '/dashboard (signed in) %{http_code}\n' http://127.0.0.1:3000/dashboard
 
   # SO-04: a backup counts as verified only once it has been restored. This job dumps a
   # throwaway database seeded with fictitious data, restores it into another throwaway

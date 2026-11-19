@@ -19,6 +19,7 @@ export const AUDIT_ACTIONS = [
   "export.budgets",
   "export.goals",
   "export.alerts",
+  "export.summary",
   // Authentication and credentials. A refusal is a denial code, never the submitted
   // address or password.
   "auth.sign_in",
@@ -43,6 +44,11 @@ export const AUDIT_ACTIONS = [
   // Recurring business expenses (M10-05): definitions, never ledger rows.
   "business_expense.create",
   "business_expense.delete",
+  // CSV cost import (M9-05): counts and the import identifier, never a row.
+  "cost.import",
+  // Unallocated-cost inbox (M9-06): bulk actions, counts and the policy version only.
+  "cost.allocate",
+  "cost.finalize",
   // Configuration that changes what the dashboard computes.
   "rate.write",
   "rate.billing_write",
@@ -52,6 +58,14 @@ export const AUDIT_ACTIONS = [
   "ai_budget.delete",
   "module.enable",
   "module.disable",
+  // Workspace membership lifecycle (M8-01). The invitation token and the invited
+  // address never enter the trail: only codes, identifiers and counts.
+  "workspace.invite",
+  "workspace.invitation_revoke",
+  "workspace.invitation_accept",
+  "workspace.member_remove",
+  "workspace.member_role_change",
+  "workspace.ownership_transfer",
   // Provider connections and deferred reads.
   "integration.connect",
   "integration.sync",
@@ -83,9 +97,12 @@ export const AUDIT_ENTITY_TYPES = [
   "BILLING_RATE",
   "INTERNAL_COST_RATE",
   "BUSINESS_EXPENSE",
+  "COST_IMPORT",
+  "COST_ENTRY",
   "MODULE",
   "ALERT_RULE",
   "AI_BUDGET",
+  "INVITATION",
   "INTEGRATION",
   "OPERATION",
 ] as const;

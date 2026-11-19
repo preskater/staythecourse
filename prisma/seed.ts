@@ -2,6 +2,7 @@ import "dotenv/config";
 import { hashPassword } from "../src/lib/auth/password";
 import { ensureCategory } from "../src/modules/budget/repository";
 import { SALARY_CATEGORY_NAME } from "../src/modules/budget/salary";
+import { MODULE_KEYS, selectModules } from "../src/modules/catalog/catalog";
 import { PASSWORD_MIN_LENGTH } from "../src/modules/identity/domain";
 import { defaultWorkspaceId } from "../src/modules/identity/workspace";
 import {
@@ -22,6 +23,12 @@ import {
  * `SEED_OWNER_FORCE_PASSWORD=true` puts the environment value back in force, which is
  * also the way out of a forgotten password.
  *
+ * The personal workspace and its initial module set are created with the owner, so a
+ * fresh stack boots straight into a usable dashboard. `SEED_WORKSPACE_MODULES` selects
+ * that set; left unset, it is the default catalog set. The seed only adds missing module
+ * rows: re-running it never duplicates a row nor re-enables a module the owner turned
+ * off.
+ *
  * Never seed real personal data here. The name and address below are
  * placeholders, and the password comes from the environment.
  */
@@ -34,6 +41,23 @@ async function main(): Promise<void> {
   if (!email || !password) {
     throw new Error(
       "SEED_OWNER_EMAIL and SEED_OWNER_PASSWORD are required. Copy .env.example to .env and set them locally.",
+    );
+  }
+
+  const selection = selectModules(process.env.SEED_WORKSPACE_MODULES);
+  if (selection.status === "empty") {
+    throw new Error(
+      `SEED_WORKSPACE_MODULES is empty. Leave it unset for the default set, or list at least one key among: ${MODULE_KEYS.join(", ")}.`,
+    );
+  }
+  if (selection.status === "unknown_module") {
+    throw new Error(
+      `SEED_WORKSPACE_MODULES lists the unknown module "${selection.key}". Known keys: ${MODULE_KEYS.join(", ")}.`,
+    );
+  }
+  if (selection.status === "missing_prerequisites") {
+    throw new Error(
+      `SEED_WORKSPACE_MODULES enables "${selection.key}" without its prerequisite(s): ${selection.missing.join(", ")}.`,
     );
   }
 
@@ -54,7 +78,7 @@ async function main(): Promise<void> {
   const owner = await upsertOwner({ email, name, passwordHash });
 
   // Without a membership the owner could sign in but reach nothing (see `getSessionUser`).
-  await ensureDefaultWorkspace(owner.id);
+  await ensureDefaultWorkspace(owner.id, selection.modules);
 
   // The salary simulator books its income into a « Salaire » category: it is created here
   // so every owner has it from the start. The booking action also creates it on demand,
@@ -67,6 +91,9 @@ async function main(): Promise<void> {
     keepsStoredPassword
       ? `Owner account ready: ${owner.email} (${owner.id}); stored password kept (set SEED_OWNER_FORCE_PASSWORD=true to overwrite it)`
       : `Owner account ready: ${owner.email} (${owner.id})`,
+  );
+  console.log(
+    `Personal workspace ready: ${defaultWorkspaceId(owner.id)} (initial modules: ${selection.modules.join(", ")})`,
   );
 }
 

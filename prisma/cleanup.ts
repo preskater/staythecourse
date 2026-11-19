@@ -2,7 +2,9 @@ import "dotenv/config";
 import {
   AUDIT_RETENTION_DAYS,
   cleanUpAuditEvents,
+  cleanUpDeliveryHistory,
   cleanUpSyncRuns,
+  DELIVERY_RETENTION_DAYS,
   SYNC_RUN_RETENTION_DAYS,
 } from "../src/jobs/retention";
 
@@ -21,12 +23,16 @@ import {
 async function main(): Promise<void> {
   const sync = await cleanUpSyncRuns();
   const audit = await cleanUpAuditEvents();
+  const delivery = await cleanUpDeliveryHistory();
 
   console.log(
     `Synchronisation history: ${sync.deleted} run(s) deleted for ${sync.workspaces} workspace(s) (retention: ${SYNC_RUN_RETENTION_DAYS} days).`,
   );
   console.log(
     `Audit trail: ${audit.deleted} event(s) deleted for ${audit.workspaces} workspace(s) (retention: ${AUDIT_RETENTION_DAYS} days).`,
+  );
+  console.log(
+    `Delivery history: ${delivery.deleted} row(s) deleted for ${delivery.workspaces} workspace(s) (retention: ${DELIVERY_RETENTION_DAYS} days).`,
   );
 }
 
