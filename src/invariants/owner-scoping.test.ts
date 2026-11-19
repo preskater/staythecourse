@@ -193,6 +193,7 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       [{ id: "fixture", provider: "fixture", currency: "EUR", frequency: "MONTHLY", startDate: date, cancelledOn: null, allowance: new Decimal("1.00") }],
       new Date("2026-02-01T00:00:00.000Z"),
     ],
+    readForecastInputs: [OWNER, { start: date, end: date, today: date }],
     readCostExplorer: [
       OWNER,
       { dimensions: {}, from: date, to: date, groupBy: "provider", page: 1 },

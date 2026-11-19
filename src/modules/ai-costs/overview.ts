@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import { formatDateOnly, formatInstant, formatMonthLabel, monthRange } from "@/lib/dates";
 import { assertCurrency, formatMoney, money } from "@/lib/money";
 import { ACTUALITY_LABELS, type Actuality } from "./actuality";
+import { MIN_DAYS_WITH_DATA, WINDOW_DAYS, type CurrencyForecast } from "./forecast";
 import { fromStoredActuality } from "./ledger";
 
 /**
@@ -10,19 +11,20 @@ import { fromStoredActuality } from "./ledger";
  * Every KPI carries its formula, period and sources, and a state that keeps "no data",
  * "not connected" and an error apart: a missing figure is never rendered as zero.
  *
- * The ledger (`CostEntry`, M9-02) and the AI budgets (M12-03) feed figures today. The
- * billing-cycle forecast (M12-04) and usage metrics — requests, token classes, cache
+ * The ledger (`CostEntry`, M9-02), the AI budgets (M12-03), the subscription register
+ * (M12-05) and the billing-cycle forecast (M12-04) feed figures today. Usage metrics — requests, token classes, cache
  * hits — from the provider adapters (M11) have no data source yet, so those KPIs read
  * "not connected" until their milestone lands.
  *
  * The output is strings only: no `Decimal` and no `Date` crosses into the page.
  */
 
-export type KpiState = "ok" | "no-data" | "not-connected" | "error";
+export type KpiState = "ok" | "no-data" | "insufficient" | "not-connected" | "error";
 
 export const KPI_STATE_LABELS: Record<KpiState, string> = {
   ok: "À jour",
   "no-data": "Aucune donnée",
+  insufficient: "Données insuffisantes",
   "not-connected": "Non connecté",
   error: "Erreur",
 };
@@ -59,6 +61,21 @@ export type AiCostOverviewDto = {
   kpis: KpiDto[];
   spendRows: SpendRowDto[];
   freshness: FreshnessRowDto[];
+  forecast: ForecastRowDto[];
+};
+
+/** One currency of the forecast with its assumptions, formatted (M12-04). */
+export type ForecastRowDto = {
+  currency: string;
+  meteredToDate: string;
+  /** `null` when the data is insufficient. */
+  dailyRate: string | null;
+  daysWithData: string;
+  remainingDays: string;
+  meteredForecast: string | null;
+  subscriptions: string;
+  upcoming: string[];
+  total: string | null;
 };
 
 /** A ledger row as the overview needs it: amount, currency, trust, period and source. */
@@ -250,23 +267,62 @@ function budgetKpi(ledger: OverviewLedger, cycle: BillingCycle, budgets: readonl
   };
 }
 
+const FORECAST_FORMULA = `Dépensé + taux journalier (${WINDOW_DAYS} j) × jours restants + abonnements.`;
+
+/** The forecast, always labelled estimated; insufficient data shows no figure. */
+function forecastKpi(ledger: OverviewLedger, cycle: BillingCycle, forecast: readonly CurrencyForecast[]): KpiDto {
+  const base = {
+    key: "forecast",
+    label: "Prévision fin de cycle",
+    formula: FORECAST_FORMULA,
+    period: cycleMonth(cycle),
+    sources: "Registre des coûts · abonnements",
+  };
+  const insufficient = `Moins de ${MIN_DAYS_WITH_DATA} jours de consommation sur ${WINDOW_DAYS}.`;
+
+  if (ledger.state === "error") return missing(base, "error", LEDGER_ERROR);
+  if (forecast.length === 0) return missing(base, "no-data", "Aucune dépense ni abonnement.");
+  if (forecast.every((row) => row.total === null)) return missing(base, "insufficient", insufficient);
+
+  return {
+    ...base,
+    state: "ok",
+    value: forecast
+      .map((row) => (row.total === null ? `${row.currency} : —` : `≈ ${amountOf(row.total, row.currency)}`))
+      .join(" · "),
+    detail: forecast.some((row) => row.total === null) ? `Estimé · ${insufficient}` : "Estimé",
+  };
+}
+
+function amountOf(value: Decimal, currency: string): string {
+  return formatMoney(money(value.toDecimalPlaces(2, Decimal.ROUND_HALF_UP), assertCurrency(currency)));
+}
+
+function forecastRows(forecast: readonly CurrencyForecast[]): ForecastRowDto[] {
+  return forecast.map((row) => ({
+    currency: row.currency,
+    meteredToDate: amountOf(row.meteredToDate, row.currency),
+    dailyRate: row.dailyRate === null ? null : `${amountOf(row.dailyRate, row.currency)} / jour`,
+    daysWithData: `${row.daysWithData} / ${WINDOW_DAYS} j`,
+    remainingDays: String(row.remainingDays),
+    meteredForecast: row.meteredForecast === null ? null : amountOf(row.meteredForecast, row.currency),
+    subscriptions: amountOf(
+      row.upcoming.reduce((sum, renewal) => sum.plus(renewal.amount), row.subscriptionsBooked),
+      row.currency,
+    ),
+    upcoming: row.upcoming.map(
+      (renewal) => `${renewal.label} le ${formatDateOnly(new Date(`${renewal.date}T00:00:00Z`))} : ${amountOf(renewal.amount, row.currency)}`,
+    ),
+    total: row.total === null ? null : amountOf(row.total, row.currency),
+  }));
+}
+
 /** KPIs whose data source arrives with a later milestone: always "not connected" today. */
 function pendingKpis(cycle: BillingCycle): KpiDto[] {
   const period = cycleMonth(cycle);
   const usage = "Fournisseurs IA";
 
   return [
-    missing(
-      {
-        key: "forecast",
-        label: "Prévision fin de cycle",
-        formula: "Dépense projetée à fin de mois.",
-        period,
-        sources: "Prévision",
-      },
-      "not-connected",
-      "Pas encore de prévision.",
-    ),
     missing(
       {
         key: "requests",
@@ -344,6 +400,7 @@ export function buildAiCostOverview(
   cycle: BillingCycle,
   timeZone: string,
   budgets: readonly OverviewBudget[] = [],
+  forecast: readonly CurrencyForecast[] = [],
 ): AiCostOverviewDto {
   return {
     cycleLabel: cyclePeriod(cycle),
@@ -351,9 +408,11 @@ export function buildAiCostOverview(
       spendKpi(ledger, cycle),
       cycleProgressKpi(cycle),
       budgetKpi(ledger, cycle, budgets),
+      forecastKpi(ledger, cycle, forecast),
       ...pendingKpis(cycle),
     ],
     spendRows: ledger.state === "ok" ? spendRows(ledger.entries) : [],
     freshness: freshnessRows(ledger, timeZone),
+    forecast: ledger.state === "ok" ? forecastRows(forecast) : [],
   };
 }

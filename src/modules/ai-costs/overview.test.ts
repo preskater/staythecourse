@@ -96,7 +96,7 @@ describe("buildAiCostOverview", () => {
   it("marks KPIs without a data source as not connected", () => {
     const overview = ok([entry("1.00")]);
 
-    for (const key of ["forecast", "requests", "tokens", "cache-rate"]) {
+    for (const key of ["requests", "tokens", "cache-rate"]) {
       expect(kpi(overview, key)).toMatchObject({ state: "not-connected", value: null });
     }
     expect(overview.freshness.at(-1)).toMatchObject({
@@ -148,6 +148,28 @@ describe("buildAiCostOverview", () => {
     expect(kpi(noSpendInCurrency, "budget").state).toBe("no-data");
 
     expect(kpi(buildAiCostOverview({ state: "error" }, cycle, TZ), "budget").state).toBe("error");
+  });
+
+  it("labels the forecast as estimated, and shows insufficient data without a figure", () => {
+    const base = { meteredToDate: new Decimal("100"), daysWithData: 9, remainingDays: 11, subscriptionsBooked: new Decimal(0), upcoming: [] };
+    const ledger = { state: "ok" as const, entries: [entry("100")], sources: [] };
+
+    expect(kpi(buildAiCostOverview(ledger, cycle, TZ, [], []), "forecast").state).toBe("no-data");
+
+    const insufficient = buildAiCostOverview(ledger, cycle, TZ, [], [
+      { ...base, currency: "EUR", daysWithData: 2, dailyRate: null, meteredForecast: null, total: null },
+    ]);
+    expect(kpi(insufficient, "forecast")).toMatchObject({ state: "insufficient", value: null });
+    expect(insufficient.forecast[0]).toMatchObject({ dailyRate: null, total: null, daysWithData: "2 / 14 j" });
+
+    const estimated = buildAiCostOverview(ledger, cycle, TZ, [], [
+      { ...base, currency: "EUR", dailyRate: new Decimal("5.555"), meteredForecast: new Decimal("161.105"), total: new Decimal("161.105") },
+    ]);
+    expect(kpi(estimated, "forecast")).toMatchObject({ state: "ok", detail: "Estimé" });
+    expect(kpi(estimated, "forecast").value).toContain("≈ 161,11");
+    assertStringsOnly(estimated);
+
+    expect(kpi(buildAiCostOverview({ state: "error" }, cycle, TZ), "forecast").state).toBe("error");
   });
 
   it("measures cycle progress with today included", () => {

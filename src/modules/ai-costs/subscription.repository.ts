@@ -4,6 +4,7 @@ import { getPrisma } from "@/lib/db";
 import { toDateOnlyString } from "@/lib/dates";
 import { assertCurrency } from "@/lib/money";
 import type { RecurrenceFrequency } from "@/modules/budget/recurrence";
+import { windowStart, type ForecastInputs } from "./forecast";
 import { validateCostEntryInput } from "./ledger";
 import { applyAllocationPolicy, findAllocationPolicy } from "./policy.repository";
 import { entryData } from "./repository";
@@ -328,4 +329,45 @@ export async function readCoreFormula(
   }
 
   return [...rows.values()].sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+/**
+ * What the billing-cycle forecast (M12-04) reads, workspace-scoped: metered spend per
+ * day over the window and to date, subscription renewals booked this cycle, and the
+ * register. Grouped in SQL; the window is `WINDOW_DAYS` long, so the read is bounded.
+ */
+export async function readForecastInputs(
+  workspaceId: string,
+  cycle: { start: Date; end: Date; today: Date },
+): Promise<ForecastInputs> {
+  const prisma = getPrisma();
+  const metered = { workspaceId, NOT: { tags: { has: SUBSCRIPTION_TAG } } };
+  const sumOf = (group: { _sum: { amount: Decimal.Value | null } }) =>
+    new Decimal((group._sum.amount ?? 0).toString());
+
+  const [days, toDate, booked, subscriptions] = await Promise.all([
+    prisma.costEntry.groupBy({
+      by: ["periodStart", "currency"],
+      where: { ...metered, periodStart: { gte: windowStart(cycle.today), lte: cycle.today } },
+      _sum: { amount: true },
+    }),
+    prisma.costEntry.groupBy({
+      by: ["currency"],
+      where: { ...metered, periodStart: { gte: cycle.start, lte: cycle.today } },
+      _sum: { amount: true },
+    }),
+    prisma.costEntry.groupBy({
+      by: ["currency"],
+      where: { workspaceId, tags: { has: SUBSCRIPTION_TAG }, periodStart: { gte: cycle.start, lt: cycle.end } },
+      _sum: { amount: true },
+    }),
+    listAiSubscriptions(workspaceId),
+  ]);
+
+  return {
+    meteredDays: days.map((group) => ({ day: group.periodStart, currency: group.currency, amount: sumOf(group) })),
+    meteredToDate: new Map(toDate.map((group) => [group.currency, sumOf(group)])),
+    subscriptionsBooked: new Map(booked.map((group) => [group.currency, sumOf(group)])),
+    subscriptions,
+  };
 }
