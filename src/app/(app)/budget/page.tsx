@@ -1,5 +1,5 @@
-import Link from "next/link";
-import { ChevronDown, PageHeader } from "@/components/ui";
+import { ActionMenu, type ActionMenuGroup } from "@/components/action-menu";
+import { PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { ModuleDisabled } from "@/components/module-disabled";
 import { hasModule } from "@/modules/catalog/catalog";
@@ -129,6 +129,45 @@ export default async function BudgetPage({
     wideParams.set("reconciled", filters.reconciled ? "1" : "0");
   }
 
+  // The budget page's own exports, in the same menu as the dashboard's: the situation
+  // summary is asked for here with `scope=finance`, so it describes this module only —
+  // its sections, its alerts — and in the month being read.
+  const budgetActions: ActionMenuGroup[] = [
+    {
+      label: "Importer",
+      items: [
+        {
+          href: "/budget/import",
+          label: "Importer un CSV",
+          hint: "Rapprochement manuel, aperçu avant écriture",
+        },
+      ],
+    },
+    {
+      label: "Exporter",
+      items: [
+        {
+          href: monthExportHref,
+          label: "Opérations du mois (CSV)",
+          hint: monthLabel,
+          download: true,
+        },
+        {
+          href: `/api/export/transactions?${wideParams.toString()}`,
+          label: scopeAll ? "Toutes les opérations (CSV)" : `Opérations de ${year} (CSV)`,
+          hint: "Même sélection que les filtres de l'écran",
+          download: true,
+        },
+        {
+          href: `/api/export/summary?scope=finance&month=${monthKey}`,
+          label: "Synthèse du budget (.md)",
+          hint: "Budget, prévisions, salaire, épargne et objectifs",
+          download: true,
+        },
+      ],
+    },
+  ];
+
   return (
     <>
       <PageHeader
@@ -141,32 +180,7 @@ export default async function BudgetPage({
               categories={expenseCategories}
               defaultCurrency={accounts[0]?.currency ?? DEFAULT_CURRENCY}
             />
-            <details className="group relative">
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 [&::-webkit-details-marker]:hidden">
-                Importer / Exporter
-                <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180 dark:text-zinc-400" />
-              </summary>
-              <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
-                <Link
-                  href="/budget/import"
-                  className="block rounded px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                >
-                  Importer un CSV
-                </Link>
-                <Link
-                  href={monthExportHref}
-                  className="block rounded px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                >
-                  Exporter le mois en CSV
-                </Link>
-                <Link
-                  href={`/api/export/transactions?${wideParams.toString()}`}
-                  className="block rounded px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                >
-                  {scopeAll ? "Exporter tout" : `Exporter ${year}`}
-                </Link>
-              </div>
-            </details>
+            <ActionMenu label="Actions" groups={budgetActions} />
           </div>
         }
       />

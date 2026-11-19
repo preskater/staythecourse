@@ -969,6 +969,97 @@ export async function deleteCostAllocation(
   });
 }
 
+/* CSV import (M9-05). */
+
+/** The import keys already stored in the workspace, among the given ones. */
+export async function findExistingImportKeys(
+  workspaceId: string,
+  keys: readonly string[],
+): Promise<Set<string>> {
+  if (keys.length === 0) {
+    return new Set();
+  }
+
+  const rows = (await getPrisma().costEntry.findMany({
+    where: { workspaceId, importKey: { in: [...keys] } },
+    select: { importKey: true },
+  })) as { importKey: string | null }[];
+
+  return new Set(rows.map((row) => row.importKey).filter((key): key is string => key !== null));
+}
+
+/**
+ * Inserts imported entries in one statement. The unique `(workspaceId, importKey)`
+ * index skips a row another import stored in the meantime; the returned keys say
+ * exactly which rows were created.
+ */
+export async function createImportedCostEntries(
+  workspaceId: string,
+  rows: readonly { input: CostEntryInput; importKey: string }[],
+): Promise<Set<string>> {
+  if (rows.length === 0) {
+    return new Set();
+  }
+
+  const data = rows.map((row) => ({
+    workspaceId,
+    ...entryData(validateCostEntryInput(row.input)),
+    importKey: row.importKey,
+  }));
+  const created = (await getPrisma().costEntry.createManyAndReturn({
+    data,
+    skipDuplicates: true,
+    select: { importKey: true },
+  })) as { importKey: string | null }[];
+
+  return new Set(created.map((row) => row.importKey).filter((key): key is string => key !== null));
+}
+
+export type CostImportMappingRecord = {
+  source: string;
+  delimiter: string;
+  hasHeader: boolean;
+  columns: Record<string, string>;
+  defaultCurrency: string | null;
+};
+
+export async function listCostImportMappings(
+  workspaceId: string,
+): Promise<CostImportMappingRecord[]> {
+  const rows = (await getPrisma().costImportMapping.findMany({
+    where: { workspaceId },
+    orderBy: { source: "asc" },
+    select: { source: true, delimiter: true, hasHeader: true, columns: true, defaultCurrency: true },
+  })) as (Omit<CostImportMappingRecord, "columns"> & { columns: unknown })[];
+
+  return rows.map((row) => ({
+    ...row,
+    columns:
+      typeof row.columns === "object" && row.columns !== null && !Array.isArray(row.columns)
+        ? (row.columns as Record<string, string>)
+        : {},
+  }));
+}
+
+/** Creates or replaces the mapping of one source; `source` is the natural key. */
+export async function saveCostImportMapping(
+  workspaceId: string,
+  mapping: CostImportMappingRecord,
+): Promise<void> {
+  const data = {
+    delimiter: mapping.delimiter,
+    hasHeader: mapping.hasHeader,
+    columns: mapping.columns,
+    defaultCurrency: mapping.defaultCurrency,
+  };
+
+  await getPrisma().costImportMapping.upsert({
+    where: { workspaceId_source: { workspaceId, source: mapping.source } },
+    create: { workspaceId, source: mapping.source, ...data },
+    update: data,
+  });
+}
+
 /**
  * What the AI cost overview (M12-01) reads, workspace-scoped.
  *

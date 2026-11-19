@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, EmptyState, Notice, PageHeader, StatCard } from "@/components/ui";
 import { ModuleDisabled } from "@/components/module-disabled";
 import { requireUser } from "@/lib/auth/guard";
@@ -114,6 +115,14 @@ export default async function CostInboxPage() {
       <PageHeader
         title="Coûts à répartir"
         description="Coûts encore en brouillon : non répartis, partiellement répartis, ou répartis en attente de validation. Rien n'est validé automatiquement et aucun projet par défaut n'est appliqué."
+        actions={
+          <Link
+            href="/ai-costs/import"
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            Importer un CSV
+          </Link>
+        }
       />
 
       {view.kind === "error" ? (
