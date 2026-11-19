@@ -107,6 +107,7 @@ describe("AUDIT_ACTIONS", () => {
       "export.budgets",
       "export.goals",
       "export.alerts",
+      "export.summary",
       "auth.sign_in",
       "auth.sign_in_refused",
       "auth.sign_out",

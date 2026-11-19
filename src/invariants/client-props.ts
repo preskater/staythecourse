@@ -94,6 +94,7 @@ export type ClientModules = {
   "src/app/(app)/real-estate/remove-property-button.tsx": typeof import("@/app/(app)/real-estate/remove-property-button");
   "src/app/(app)/real-estate/sale-form.tsx": typeof import("@/app/(app)/real-estate/sale-form");
   "src/app/(app)/real-estate/valuation-form.tsx": typeof import("@/app/(app)/real-estate/valuation-form");
+  "src/components/action-menu.tsx": typeof import("@/components/action-menu");
   "src/components/forms.tsx": typeof import("@/components/forms");
   "src/components/keyboard-shortcuts.tsx": typeof import("@/components/keyboard-shortcuts");
   "src/components/main-nav.tsx": typeof import("@/components/main-nav");

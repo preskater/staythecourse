@@ -130,12 +130,13 @@ export async function BudgetsSection({
       actions={
         <span className="flex flex-wrap items-center gap-2">
           <CopyBudgetsButton monthKey={monthKey} previousLabel={previousLabel} />
-          <Link
+          <a
             href={`/api/export/budgets?month=${monthKey}`}
+            download
             className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             Exporter en CSV
-          </Link>
+          </a>
         </span>
       }
     >

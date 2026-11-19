@@ -8,19 +8,12 @@ import { Field, inputClass } from "@/components/ui";
 import { SUPPORTED_CURRENCIES } from "@/lib/money";
 import {
   PROPERTY_OCCUPANCIES,
+  PROPERTY_OCCUPANCY_LABELS as OCCUPANCY_LABELS,
   propertyInputSchema,
   type PropertyInput,
   type PropertyOccupancy,
 } from "@/modules/real-estate/domain";
 import { createPropertyAction, updatePropertyAction } from "./actions";
-
-const OCCUPANCY_LABELS: Record<PropertyOccupancy, string> = {
-  RENTED: "Loué",
-  VACANT: "Vacant",
-  OWNER_OCCUPIED: "Occupé par le propriétaire",
-  SEASONAL: "Saisonnier",
-  OTHER: "Autre",
-};
 
 /** String-only initial values for the edit form: a client never receives a Decimal. */
 export type PropertyFormValues = {
