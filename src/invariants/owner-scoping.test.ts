@@ -185,6 +185,19 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
         },
       ],
     ],
+    createAgent: [
+      OWNER,
+      {
+        name: "fixture",
+        config: { modelPolicy: { primary: { provider: "p", model: "m" } }, ownerId: "fixture" },
+      },
+    ],
+    updateAgentConfig: [
+      OWNER,
+      "fixture",
+      { modelPolicy: { primary: { provider: "p", model: "m" } }, ownerId: "fixture" },
+    ],
+    updateAgentDetails: [OWNER, "fixture", { status: "PAUSED" }],
     recordExchangeRate: [
       {
         workspaceId: OWNER,
@@ -228,6 +241,7 @@ const MODULES = {
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
   aiCosts: () => import("@/modules/ai-costs/repository"),
+  agents: () => import("@/modules/agents/repository"),
 };
 
 async function firstQueriesOf(fn: (...args: unknown[]) => unknown, name: string) {

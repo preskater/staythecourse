@@ -33,6 +33,7 @@ const prisma = {
   alert: table,
   integrationConnection: table,
   issueSnapshot: table,
+  agent: table,
   // Interactive transactions hand the same fake client back to the callback.
   $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
 };
@@ -56,6 +57,7 @@ const { findConnectionForSync, listIssues } = await import("./integrations/repos
 const { findExchangeRateSnapshotById, recordExchangeRate } = await import(
   "./ai-costs/repository"
 );
+const { findAgent, updateAgentDetails } = await import("./agents/repository");
 
 const FOREIGN = "ws-someone-else";
 
@@ -243,5 +245,19 @@ describe("ai-costs", () => {
     expect(createMock.mock.calls[0][0]).toMatchObject({
       data: { workspaceId: "ws-1", baseCurrency: "USD", quoteCurrency: "EUR" },
     });
+  });
+});
+
+describe("agents", () => {
+  it("reads a foreign workspace's agent as not found", async () => {
+    findFirstMock.mockResolvedValueOnce(null);
+    expect(await findAgent(FOREIGN, "agent-1")).toBeNull();
+    expect(where(findFirstMock)).toEqual({ id: "agent-1", workspaceId: FOREIGN });
+  });
+
+  it("never renames another workspace's agent", async () => {
+    updateManyMock.mockResolvedValueOnce({ count: 0 });
+    expect(await updateAgentDetails(FOREIGN, "agent-1", { name: "x" })).toBe(false);
+    expect(where(updateManyMock)).toEqual({ id: "agent-1", workspaceId: FOREIGN });
   });
 });
