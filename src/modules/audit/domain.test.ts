@@ -132,6 +132,8 @@ describe("AUDIT_ACTIONS", () => {
       "alert_rules.save",
       "ai_budget.create",
       "ai_budget.delete",
+      "ai_subscription.create",
+      "ai_subscription.cancel",
       "module.enable",
       "module.disable",
       "integration.connect",

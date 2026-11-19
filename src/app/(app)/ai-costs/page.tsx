@@ -34,6 +34,8 @@ import {
 import Decimal from "decimal.js";
 import { AiCostsTabs, resolveAiCostsTab } from "./ai-costs-tabs";
 import { BudgetsSection } from "./budgets-section";
+import { SubscriptionsSection } from "./subscriptions-section";
+import { bookDueRenewals } from "@/modules/ai-costs/subscription.repository";
 import { ExplorerSection } from "./explorer-section";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +74,25 @@ export default async function AiCostsPage({
   const timeZone = publicEnv.NEXT_PUBLIC_DEFAULT_TIME_ZONE;
   const cycle = currentBillingCycle(todayDateOnly(timeZone));
   const tab = resolveAiCostsTab(params.tab);
+
+  // Renewals due by today become ledger entries before any figure is read (idempotent).
+  await bookDueRenewals(user.workspace.id, cycle.today).catch((error) =>
+    console.error(`[ai-subscriptions] ${error instanceof Error ? error.name : typeof error}`),
+  );
+
+  if (tab === "subscriptions") {
+    return (
+      <>
+        <PageHeader title="Coûts IA" description="Abonnements et sièges IA renouvelés chaque période." />
+        <AiCostsTabs current="subscriptions" />
+        <SubscriptionsSection
+          workspaceId={user.workspace.id}
+          canWrite={hasPermission(user.workspace.role, "write")}
+          cycle={cycle}
+        />
+      </>
+    );
+  }
 
   if (tab === "explorer") {
     const options = await listExplorerOptions(user.workspace.id);

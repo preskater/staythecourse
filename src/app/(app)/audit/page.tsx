@@ -53,6 +53,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   "alert_rules.save": "Règles d'alerte enregistrées",
   "ai_budget.create": "Budget IA enregistré",
   "ai_budget.delete": "Budget IA supprimé",
+  "ai_subscription.create": "Abonnement IA enregistré",
+  "ai_subscription.cancel": "Abonnement IA résilié",
   "module.enable": "Module activé",
   "module.disable": "Module désactivé",
   "integration.connect": "Connexion d'intégration",
@@ -75,6 +77,7 @@ const ENTITY_LABELS: Record<AuditEntityType, string> = {
   MODULE: "Module",
   ALERT_RULE: "Règle d'alerte",
   AI_BUDGET: "Budget IA",
+  AI_SUBSCRIPTION: "Abonnement IA",
   INTEGRATION: "Intégration",
   OPERATION: "Opération système",
 };
