@@ -230,6 +230,14 @@ enum CostEntryStatus {
   FINALIZED
 }
 
+/// Lifecycle of an agent (M13-01). Not part of its configuration: changing it
+/// creates no version.
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+  RETIRED
+}
+
 /// A space (personal, family, company) whose members share its data.
 /// Every budget, real-estate, integration and alert record belongs to one (M7-04).
 model Workspace {
@@ -269,6 +277,7 @@ model Workspace {
   auditEvents          AuditEvent[]
   exchangeRates        ExchangeRateSnapshot[]
   costEntries          CostEntry[]
+  agents               Agent[]
 }
 
 /// Activation of one catalog module (`src/modules/catalog`) in one workspace. The key is
@@ -1518,4 +1527,44 @@ model ExchangeRateSnapshot {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, baseCurrency, quoteCurrency, rateDate], map: "ExchangeRateSnapshot_workspace_pair_rateDate_idx")
+}
+
+/// An agent configuration tracked by the workspace (M13-01). The platform never runs
+/// it. Name and status live here; everything that changes behaviour lives in versions.
+model Agent {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  status      AgentStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  AgentVersion[]
+
+  @@unique([workspaceId, name])
+}
+
+/// An immutable configuration snapshot. Insert-only: runs (M13-02) reference the
+/// exact version that produced them. `fingerprint` is the SHA-256 of the canonical
+/// configuration (see `src/modules/agents/config.ts`).
+model AgentVersion {
+  id               String   @id @default(cuid())
+  agentId          String
+  version          Int
+  /// `{ primary: { provider, model }, fallbacks: [{ provider, model }] }`.
+  modelPolicy      Json
+  tools            String[]
+  /// A workspace member's user id, checked at write time. No foreign key, so a
+  /// version stays readable after the member leaves.
+  ownerId          String
+  /// `owner/repository` names: access metadata, never credentials.
+  repositoryScopes String[]
+  fingerprint      String   @db.Char(64)
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+  @@index([agentId, fingerprint])
 }
