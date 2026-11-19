@@ -13,6 +13,7 @@ import { ModuleDisabled } from "@/components/module-disabled";
 import { requireUser } from "@/lib/auth/guard";
 import { todayDateOnly } from "@/lib/dates";
 import { publicEnv } from "@/lib/env";
+import type { SearchParamsInput } from "@/lib/search-params";
 import { hasModule } from "@/modules/catalog/catalog";
 import {
   buildAiCostOverview,
@@ -21,7 +22,10 @@ import {
   type KpiState,
   type OverviewLedger,
 } from "@/modules/ai-costs/overview";
-import { readAiCostOverviewLedger } from "@/modules/ai-costs/repository";
+import { parseExplorerFilters } from "@/modules/ai-costs/explorer";
+import { listExplorerOptions, readAiCostOverviewLedger } from "@/modules/ai-costs/repository";
+import { AiCostsTabs, resolveAiCostsTab } from "./ai-costs-tabs";
+import { ExplorerSection } from "./explorer-section";
 
 export const dynamic = "force-dynamic";
 
@@ -37,12 +41,18 @@ function StateBadge({ state }: { state: KpiState }) {
 }
 
 /**
- * « Coûts IA » — read-only overview of the current billing cycle (M12-01).
+ * « Coûts IA » — read-only overview of the current billing cycle (M12-01) and the
+ * multidimensional explorer (M12-02), one `?tab=` each.
  *
  * Every member of the workspace reads it; nothing here writes. A KPI without a data
  * source shows its state and its definition, never a zero.
  */
-export default async function AiCostsPage() {
+export default async function AiCostsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParamsInput>;
+}) {
+  const params = await searchParams;
   const user = await requireUser();
 
   if (!hasModule(user.workspace, "ai-costs")) {
@@ -51,6 +61,27 @@ export default async function AiCostsPage() {
 
   const timeZone = publicEnv.NEXT_PUBLIC_DEFAULT_TIME_ZONE;
   const cycle = currentBillingCycle(todayDateOnly(timeZone));
+  const tab = resolveAiCostsTab(params.tab);
+
+  if (tab === "explorer") {
+    const options = await listExplorerOptions(user.workspace.id);
+
+    return (
+      <>
+        <PageHeader
+          title="Coûts IA"
+          description="Filtrez les coûts par dimension et période, puis descendez jusqu'aux entrées sources."
+        />
+        <AiCostsTabs current="explorer" />
+        <ExplorerSection
+          workspaceId={user.workspace.id}
+          filters={parseExplorerFilters(params, options, cycle)}
+          options={options}
+          timeZone={timeZone}
+        />
+      </>
+    );
+  }
 
   let ledger: OverviewLedger;
   try {
@@ -77,6 +108,8 @@ export default async function AiCostsPage() {
           </Link>
         }
       />
+
+      <AiCostsTabs current="overview" />
 
       {ledger.state === "error" ? (
         <Notice tone="error">
