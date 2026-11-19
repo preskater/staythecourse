@@ -1,5 +1,5 @@
 import Decimal from "decimal.js";
-import { formatDateOnly, formatInstant, monthRange } from "@/lib/dates";
+import { formatDateOnly, formatInstant, formatMonthLabel, monthRange } from "@/lib/dates";
 import { assertCurrency, formatMoney, money } from "@/lib/money";
 import { ACTUALITY_LABELS, type Actuality } from "./actuality";
 import { fromStoredActuality } from "./ledger";
@@ -114,12 +114,17 @@ function sourceLabel(row: OverviewSourceRow): string {
     : (SOURCE_KIND_LABELS[row.sourceKind] ?? row.sourceKind);
 }
 
-const LEDGER_SOURCES = "Registre des coûts (fournisseurs, imports, saisies manuelles)";
-const LEDGER_ERROR = "Le registre des coûts n'a pas pu être lu. Réessayez plus tard.";
+const LEDGER_SOURCES = "Registre des coûts";
+const LEDGER_ERROR = "Registre illisible, réessayez plus tard.";
 
 function cyclePeriod(cycle: BillingCycle): string {
   const last = new Date(cycle.end.getTime() - DAY_MS);
   return `Du ${formatDateOnly(cycle.start)} au ${formatDateOnly(last)} (mois civil)`;
+}
+
+/** The cycle as a month name ("novembre 2026"): the exact days are in the page header. */
+function cycleMonth(cycle: BillingCycle): string {
+  return formatMonthLabel(cycle.start.getUTCFullYear(), cycle.start.getUTCMonth() + 1);
 }
 
 function missing(
@@ -166,15 +171,14 @@ function spendKpi(ledger: OverviewLedger, cycle: BillingCycle): KpiDto {
   const base = {
     key: "spend",
     label: "Dépense du cycle",
-    formula:
-      "Somme des montants des entrées dont la période commence dans le cycle, remboursements (montants négatifs) inclus. Une ligne par devise, sans conversion.",
-    period: cyclePeriod(cycle),
+    formula: "Somme des entrées du mois, remboursements inclus, par devise.",
+    period: cycleMonth(cycle),
     sources: LEDGER_SOURCES,
   };
 
   if (ledger.state === "error") return missing(base, "error", LEDGER_ERROR);
   if (ledger.entries.length === 0) {
-    return missing(base, "no-data", "Aucune entrée de coût sur ce cycle.");
+    return missing(base, "no-data", "Aucune entrée ce mois-ci.");
   }
 
   const value = [...totalsByCurrency(ledger.entries)]
@@ -203,72 +207,72 @@ function cycleProgressKpi(cycle: BillingCycle): KpiDto {
     state: "ok",
     value: `${percent} %`,
     detail: `Jour ${elapsed} sur ${total}`,
-    formula: "Jours écoulés (aujourd'hui inclus) ÷ nombre de jours du cycle, arrondi à l'inférieur.",
-    period: cyclePeriod(cycle),
-    sources: "Calendrier, dans le fuseau horaire configuré",
+    formula: "Jours écoulés ÷ jours du mois.",
+    period: cycleMonth(cycle),
+    sources: "Calendrier",
   };
 }
 
 /** KPIs whose data source arrives with a later milestone: always "not connected" today. */
 function pendingKpis(cycle: BillingCycle): KpiDto[] {
-  const period = cyclePeriod(cycle);
-  const usage = "Adaptateurs de consommation des fournisseurs IA (non connectés)";
+  const period = cycleMonth(cycle);
+  const usage = "Fournisseurs IA";
 
   return [
     missing(
       {
         key: "budget",
         label: "Dépense vs budget",
-        formula: "Dépense du cycle ÷ budget IA du cycle, par devise.",
+        formula: "Dépense ÷ budget, par devise.",
         period,
         sources: "Budgets IA",
       },
       "not-connected",
-      "Aucun budget IA ne peut encore être défini.",
+      "Pas encore de budget IA.",
     ),
     missing(
       {
         key: "forecast",
         label: "Prévision fin de cycle",
-        formula: "Projection de la dépense jusqu'au dernier jour du cycle.",
+        formula: "Dépense projetée à fin de mois.",
         period,
-        sources: "Prévision de cycle de facturation",
+        sources: "Prévision",
       },
       "not-connected",
-      "La prévision n'est pas encore disponible : aucune extrapolation n'est affichée.",
+      "Pas encore de prévision.",
     ),
     missing(
       {
         key: "requests",
         label: "Requêtes",
-        formula: "Nombre de requêtes facturées par les fournisseurs sur le cycle.",
+        formula: "Requêtes facturées sur le mois.",
         period,
         sources: usage,
       },
       "not-connected",
-      "Aucun fournisseur IA ne transmet sa consommation.",
+      "Aucun fournisseur connecté.",
     ),
     missing(
       {
         key: "tokens",
         label: "Classes de tokens",
-        formula: "Tokens d'entrée, de sortie, écrits en cache et lus en cache, sur le cycle.",
+        formula: "Tokens entrée, sortie et cache.",
         period,
         sources: usage,
       },
       "not-connected",
-      "Aucun fournisseur IA ne transmet sa consommation.",
+      "Aucun fournisseur connecté.",
     ),
     missing(
       {
         key: "cache-rate",
         label: "Taux de cache",
-        formula: "Tokens lus en cache ÷ (tokens d'entrée + tokens lus en cache).",
+        formula: "Lus en cache ÷ (entrée + lus en cache).",
         period,
         sources: usage,
       },
       "not-connected",
-      "Aucun fournisseur IA ne transmet sa consommation.",
+      "Aucun fournisseur connecté.",
     ),
   ];
 }
@@ -293,7 +297,7 @@ function freshnessRows(ledger: OverviewLedger, timeZone: string): FreshnessRowDt
       source: "Fournisseurs IA (API)",
       state: "not-connected",
       lastCapturedAt: null,
-      detail: "Aucune synchronisation de fournisseur n'est configurée.",
+      detail: "Aucun fournisseur synchronisé.",
     });
   }
 
@@ -302,7 +306,7 @@ function freshnessRows(ledger: OverviewLedger, timeZone: string): FreshnessRowDt
       source: "Registre des coûts",
       state: "no-data",
       lastCapturedAt: null,
-      detail: "Aucune entrée de coût n'a encore été enregistrée.",
+      detail: "Aucune entrée enregistrée.",
     });
   }
 

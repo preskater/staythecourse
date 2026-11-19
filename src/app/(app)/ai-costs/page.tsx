@@ -69,13 +69,12 @@ export default async function AiCostsPage() {
     <>
       <PageHeader
         title="Coûts IA"
-        description={`Cycle en cours : ${overview.cycleLabel}. Chaque indicateur indique sa formule, sa période et ses sources ; une donnée absente n'est jamais affichée comme un zéro.`}
+        description={`Cycle : ${overview.cycleLabel}.`}
       />
 
       {ledger.state === "error" ? (
         <Notice tone="error">
-          Le registre des coûts n&apos;a pas pu être lu. Les indicateurs qui en dépendent
-          sont marqués en erreur.
+          Registre des coûts illisible : indicateurs en erreur.
         </Notice>
       ) : null}
 
@@ -113,9 +112,10 @@ export default async function AiCostsPage() {
                   ) : null}
                 </td>
                 <td className={`${tdClass} text-xs text-zinc-600 dark:text-zinc-400`}>
-                  <span className="block">Formule : {kpi.formula}</span>
-                  <span className="block">Période : {kpi.period}</span>
-                  <span className="block">Sources : {kpi.sources}</span>
+                  <span className="block">{kpi.formula}</span>
+                  <span className="block text-zinc-500 dark:text-zinc-500">
+                    {kpi.period} · {kpi.sources}
+                  </span>
                 </td>
               </tr>
             ))}
@@ -125,15 +125,15 @@ export default async function AiCostsPage() {
 
       <Card
         title="Dépense par devise et fiabilité"
-        description="Montants non convertis. La fiabilité indique si le montant est constaté, calculé, réparti, estimé ou rapproché."
+        description="Montants non convertis."
       >
         {overview.spendRows.length === 0 ? (
           <EmptyState
             title={ledger.state === "error" ? "Données indisponibles" : "Aucune dépense sur ce cycle"}
             description={
               ledger.state === "error"
-                ? "Le registre des coûts n'a pas pu être lu."
-                : "Aucune entrée de coût ne commence dans le cycle en cours."
+                ? "Registre illisible."
+                : "Aucune entrée ce mois-ci."
             }
           />
         ) : (
@@ -170,7 +170,7 @@ export default async function AiCostsPage() {
 
       <Card
         title="Fraîcheur des sources"
-        description="Dernière capture connue de chaque source, tous cycles confondus."
+        description="Dernière capture de chaque source."
       >
         <TableShell caption="Fraîcheur des sources de coûts">
           <thead>
