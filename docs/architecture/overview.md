@@ -19,7 +19,7 @@ the pages that consume it.
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
 | `micro-business` | Clients and projects of a commercial workspace: billing model, status, reference currency, key dates, archive/restore. No revenue entry or invoice yet (M10-02). | `domain.ts`, `repository.ts` |
 | `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period), their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions, and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). Conservation is exact in cents; finalized entries are immutable. No provider call yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `exchange.ts`, `repository.ts` |
-| `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots. | `domain.ts`, `adapter.ts`, `github.ts`, `gitlab.ts`, `repository.ts` |
+| `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots, GitHub delivery history (M14-02). | `domain.ts`, `adapter.ts`, `github.ts`, `github-delivery.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
 | `dashboard` | Read-only aggregation for the home page. | `queries.ts` |
@@ -1305,6 +1305,35 @@ runs of repositories no longer tracked are dropped, so the table is bounded by
 construction (repositories read × 20 rows) and `db:cleanup` does not need to touch it.
 DA-04 can reuse the adapter method as is: it is a single bounded request per
 repository whose result is already normalised to the stored fields.
+
+### Delivery history (M14-02)
+
+GitHub pull requests, releases and deployments are read through the **GraphQL API**,
+one query per repository on the same bounded selection as issues
+(`src/modules/integrations/github-delivery.ts`). REST would need one request per pull
+request for its files, reviews and commits; GraphQL returns them in one read-only
+`query` (no mutation is ever sent, the token stays read-only).
+
+What is read, per repository and per run: the 50 most recently updated pull requests,
+keeping those updated in the last **90 days**; per pull request at most 100 files
+(path and line counts), 30 reviews (author, verdict, instant), 50 commits (SHA, author
+login, instant) and 10 closing issue references; the 20 most recent releases and
+deployments created in the window. Comments are **counted only**. Never read: pull
+request descriptions, comment or review text, commit messages, diffs. A cut child list
+sets `childrenTruncated`; the provider's counters (`changedFiles`, `commitsCount`,
+`reviewsCount`) stay exact.
+
+Errors: a refusal or a GraphQL error on one repository (`NOT_FOUND`, `UNAUTHORIZED`,
+`INVALID_RESPONSE`) is recorded for that repository, keeps its earlier history and
+counts as failed, so the run reads as partial. A spent quota (HTTP 403/429 or GraphQL
+`RATE_LIMITED`) stops the run. Storage is idempotent: rows are keyed by
+`(connection, externalId)` and a pull request's children are replaced with it in one
+transaction. GitLab returns `supported: false` until M14-03.
+
+Retention: this is history, unlike CI runs and open issues. `npm run db:cleanup`
+deletes pull requests whose last provider update is older than **395 days** (13
+months, `DELIVERY_RETENTION_DAYS`; files, reviews, commits and links cascade), and
+releases and deployments created before the same cutoff.
 
 ## Architecture invariants (UX-04)
 

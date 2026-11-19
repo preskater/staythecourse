@@ -18,6 +18,7 @@ import {
   type SyncRequest,
 } from "./adapter";
 import { cacheResourceKey } from "./cache";
+import { listGitHubDelivery } from "./github-delivery";
 import type {
   ProviderCiRun,
   ProviderIssue,
@@ -189,7 +190,7 @@ export function normaliseGitHubRepository(
 export function createGitHubAdapter(): IntegrationAdapter {
   return {
     provider: "GITHUB",
-    requiredScopes: ["repo:read", "actions:read"],
+    requiredScopes: ["repo:read", "actions:read", "deployments:read"],
     tracksIssues: true,
     tracksMilestones: true,
 
@@ -517,6 +518,9 @@ export function createGitHubAdapter(): IntegrationAdapter {
         repositoriesFailed: results.filter((result) => !result.read).length,
       };
     },
+
+    // Delivery history (M14-02): one GraphQL query per repository, see github-delivery.ts.
+    listDelivery: (request: IssueSyncRequest) => listGitHubDelivery(request),
   };
 }
 

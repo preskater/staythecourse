@@ -95,6 +95,7 @@ const NOT_OWNER_SCOPED: Record<string, string> = {
   "integrations.listCacheEntries": "keyed by an owner-checked connection (DA-04 cache)",
   "integrations.saveCacheChecks": "keyed by an owner-checked connection (DA-04 cache)",
   "integrations.saveCiRuns": "keyed by an owner-checked connection (DA-03 CI)",
+  "integrations.saveDelivery": "keyed by an owner-checked connection (M14-02 delivery)",
   // Rows already resolved for the owner by the calling action.
   "budget.createImportedTransactions": "rows carry the owner id, validated by the import action",
   "realEstate.createCashflow": "keyed by a property the action found with findProperty(userId, id)",
