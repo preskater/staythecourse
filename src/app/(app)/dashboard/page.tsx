@@ -56,6 +56,7 @@ export default async function DashboardPage() {
 								href: "/api/export/transactions",
 								label: "Transactions (CSV)",
 								hint: `Opérations de ${monthLabel}`,
+								download: true,
 							},
 						]
 					: []),
@@ -63,6 +64,7 @@ export default async function DashboardPage() {
 					href: "/api/export/summary",
 					label: "Synthèse de situation (.md)",
 					hint: "Document complet, lisible par un assistant",
+					download: true,
 				},
 				...(budget
 					? [
@@ -70,6 +72,7 @@ export default async function DashboardPage() {
 								href: "/api/export/summary?scope=finance",
 								label: "Situation financière seule (.md)",
 								hint: "Budget uniquement",
+								download: true,
 							},
 						]
 					: []),
@@ -410,12 +413,13 @@ export default async function DashboardPage() {
 				>
 					<div className="flex flex-col gap-3">
 						<div>
-							<Link
+							<a
 								href="/api/export/summary"
+								download
 								className="inline-flex rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
 							>
 								Télécharger la synthèse (.md)
-							</Link>
+							</a>
 						</div>
 						<p className="text-xs text-zinc-500 dark:text-zinc-400">
 							Le document cite son mois de référence et son horizon (6 mois par défaut), indique

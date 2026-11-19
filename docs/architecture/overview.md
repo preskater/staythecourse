@@ -1165,6 +1165,16 @@ block. The delivery writes one `export.summary` audit entry (`scope`, `month`, `
 section count, truncation) before the response; a file whose entry cannot be written is
 withheld, like every other export.
 
+### Download links
+
+Every export link is a plain `<a download>`, never a `next/link` (the `ActionMenu` takes
+a `download` flag and renders the item accordingly). A `<Link>` would start a client
+navigation to the Route Handler; the browser keeps the current document because the
+response is an attachment, but the router would record the export URL as the current
+route. The next Server Action would then be posted to `/api/export/...` and answered
+`405`, leaving the page stuck. The plain anchor avoids the navigation, and the single
+request also keeps one download equal to one audit entry.
+
 ### Audit trail (SO-02 / M18-02)
 
 Every security-sensitive or data-changing action writes one `AuditEvent` row: the

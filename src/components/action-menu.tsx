@@ -10,6 +10,13 @@ export type ActionMenuItem = {
   label: string;
   /** Second line: what the action does, in a few words. */
   hint?: string;
+  /**
+   * Marks a file download. It is rendered as a plain `<a download>`: a `<Link>` would
+   * start a client navigation to a Route Handler, and the router would keep the export
+   * URL as the current route while the browser stays on the page. The next Server
+   * Action would then be posted to the export endpoint and fail with a 405.
+   */
+  download?: boolean;
 };
 
 export type ActionMenuGroup = {
@@ -98,21 +105,41 @@ export function ActionMenu({
               {group.label}
             </p>
 
-            {group.items.map((item) => (
-              <Link
-                key={`${item.href}|${item.label}`}
-                href={item.href}
-                onClick={close}
-                className="block rounded-md px-2 py-1.5 hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800"
-              >
-                <span className="block text-sm">{item.label}</span>
-                {item.hint ? (
-                  <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
-                    {item.hint}
-                  </span>
-                ) : null}
-              </Link>
-            ))}
+            {group.items.map((item) => {
+              const className =
+                "block rounded-md px-2 py-1.5 hover:bg-zinc-100 focus-visible:bg-zinc-100 dark:hover:bg-zinc-800 dark:focus-visible:bg-zinc-800";
+              const body = (
+                <>
+                  <span className="block text-sm">{item.label}</span>
+                  {item.hint ? (
+                    <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+                      {item.hint}
+                    </span>
+                  ) : null}
+                </>
+              );
+
+              return item.download ? (
+                <a
+                  key={`${item.href}|${item.label}`}
+                  href={item.href}
+                  download
+                  onClick={close}
+                  className={className}
+                >
+                  {body}
+                </a>
+              ) : (
+                <Link
+                  key={`${item.href}|${item.label}`}
+                  href={item.href}
+                  onClick={close}
+                  className={className}
+                >
+                  {body}
+                </Link>
+              );
+            })}
           </div>
         ))}
       </div>

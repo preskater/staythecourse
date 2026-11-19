@@ -215,12 +215,13 @@ export default async function RealEstatePage({
             >
               Calendrier
             </Link>
-            <Link
+            <a
               href="/api/export/properties"
+              download
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               Exporter en CSV
-            </Link>
+            </a>
           </>
         }
       />
