@@ -95,6 +95,7 @@ const NOT_OWNER_SCOPED: Record<string, string> = {
   "integrations.listCacheEntries": "keyed by an owner-checked connection (DA-04 cache)",
   "integrations.saveCacheChecks": "keyed by an owner-checked connection (DA-04 cache)",
   "integrations.saveCiRuns": "keyed by an owner-checked connection (DA-03 CI)",
+  "integrations.saveDelivery": "keyed by an owner-checked connection (M14-02 delivery)",
   // Rows already resolved for the owner by the calling action.
   "budget.createImportedTransactions": "rows carry the owner id, validated by the import action",
   "realEstate.createCashflow": "keyed by a property the action found with findProperty(userId, id)",
@@ -167,6 +168,23 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       OWNER,
       "fixture",
       { amount: new Decimal("1.00"), dimensions: { projectId: "fixture" } },
+    ],
+    createImportedCostEntries: [
+      OWNER,
+      [
+        {
+          importKey: "fixture",
+          input: {
+            amount: "12.34",
+            currency: "EUR",
+            actuality: "observed",
+            source: { kind: "import", importId: "fixture", rowNumber: 2, capturedAt: date },
+            periodStart: date,
+            periodEnd: date,
+            notes: "fixture",
+          },
+        },
+      ],
     ],
     createAgent: [
       OWNER,

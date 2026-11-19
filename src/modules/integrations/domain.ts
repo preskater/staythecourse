@@ -104,6 +104,58 @@ export type ProviderCiRun = {
   updatedAt: Date;
 };
 
+/** A pull request and its delivery metadata (M14-02). Never text beyond the title. */
+export type ProviderPullRequest = {
+  externalId: string;
+  repository: string;
+  number: number;
+  title: string;
+  url: string;
+  authorLogin: string | null;
+  state: string;
+  isDraft: boolean;
+  baseBranch: string;
+  headBranch: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  commitsCount: number;
+  commentsCount: number;
+  reviewsCount: number;
+  openedAt: Date;
+  closedAt: Date | null;
+  mergedAt: Date | null;
+  updatedAt: Date;
+  /** True when files, reviews, commits or links were cut by their bound. */
+  childrenTruncated: boolean;
+  files: { path: string; additions: number; deletions: number; changeType: string }[];
+  reviews: { externalId: string; authorLogin: string | null; state: string; submittedAt: Date | null }[];
+  commits: { sha: string; authorLogin: string | null; committedAt: Date }[];
+  issueLinks: { repository: string; issueNumber: number; url: string }[];
+};
+
+export type ProviderRelease = {
+  externalId: string;
+  repository: string;
+  tagName: string;
+  name: string | null;
+  url: string;
+  isPrerelease: boolean;
+  isDraft: boolean;
+  releasedAt: Date;
+  publishedAt: Date | null;
+};
+
+export type ProviderDeployment = {
+  externalId: string;
+  repository: string;
+  environment: string;
+  sha: string;
+  state: string | null;
+  deployedAt: Date;
+  statusUpdatedAt: Date | null;
+};
+
 export type SyncOutcome = {
   projects: ProviderProject[];
   fetchedAt: Date;

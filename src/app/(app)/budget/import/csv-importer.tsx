@@ -19,6 +19,7 @@ import {
   type ImportTarget,
 } from "@/modules/budget/import";
 import { importTransactionsAction } from "./actions";
+import { plural } from "@/lib/word";
 
 /**
  * CSV import, browser side: pick a file, map its columns, check the preview, submit.
@@ -77,10 +78,6 @@ function withColumnTarget(
   }
 
   return next;
-}
-
-function plural(count: number, singular: string, pluralForm?: string): string {
-  return `${count} ${count > 1 ? (pluralForm ?? `${singular}s`) : singular}`;
 }
 
 export function CsvImporter({

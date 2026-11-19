@@ -6,7 +6,10 @@ import {
 import type {
   IntegrationProvider,
   ProviderCiRun,
+  ProviderDeployment,
   ProviderIssue,
+  ProviderPullRequest,
+  ProviderRelease,
   ProviderMilestone,
   ProviderProject,
   SyncOutcome,
@@ -84,6 +87,8 @@ export interface IntegrationAdapter {
   listIssues(request: IssueSyncRequest): Promise<IssueSyncOutcome>;
   listMilestones(request: IssueSyncRequest): Promise<MilestoneSyncOutcome>;
   listCiRuns(request: IssueSyncRequest): Promise<CiSyncOutcome>;
+  /** Delivery history (M14-02): pull requests, releases, deployments. */
+  listDelivery(request: IssueSyncRequest): Promise<DeliverySyncOutcome>;
 }
 
 /**
@@ -160,6 +165,31 @@ export type CiSyncOutcome = RepositoryScanSummary & {
   supported: boolean;
   /** One entry per repository requested, in the order of the bounded selection. */
   repositories: CiRepositoryResult[];
+  fetchedAt: Date;
+};
+
+/**
+ * Delivery data of one repository (M14-02). A refusal is kept per repository with its
+ * safe code, like CI: a token may lack the pull-request or deployment permission on
+ * one repository without the whole synchronisation failing.
+ */
+export type DeliveryRepositoryResult =
+  | {
+      repository: string;
+      read: true;
+      pullRequests: ProviderPullRequest[];
+      releases: ProviderRelease[];
+      deployments: ProviderDeployment[];
+      /** True when more pull requests were updated within the window than the bound. */
+      windowTruncated: boolean;
+    }
+  | { repository: string; read: false; errorCode: string };
+
+export type DeliverySyncOutcome = RepositoryScanSummary & {
+  supported: boolean;
+  repositories: DeliveryRepositoryResult[];
+  /** Start of the window read: items updated (pull requests) or created before it are not read. */
+  windowStart: Date;
   fetchedAt: Date;
 };
 
