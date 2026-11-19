@@ -57,6 +57,7 @@ export const MODULE_CATALOG: Record<ModuleKey, ModuleDefinition> = {
   "ai-costs": {
     label: "Coûts IA",
     requires: [],
+    // The overview is the panel's first page (M12-01); it links to the inbox (M9-06).
     nav: { href: "/ai-costs", label: "Coûts IA" },
     config: noConfig,
   },
