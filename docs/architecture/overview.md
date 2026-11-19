@@ -13,7 +13,7 @@ the pages that consume it.
 
 | Module | Responsibility | Key files |
 | --- | --- | --- |
-| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) and their permission presets. No public sign-up: the account and its personal workspace are created by the seed script. | `repository.ts`, `workspace.ts`, `permissions.ts` |
+| `identity` | The owner account and workspace memberships (roles `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`). No public sign-up: the account, its personal workspace and the initial module set are created by the seed script. | `repository.ts`, `workspace.ts` |
 | `catalog` | Module catalog (stable keys, prerequisites, configuration schemas) and per-workspace activation. Navigation and the module guards read from it. | `catalog.ts`, `repository.ts` |
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
@@ -962,8 +962,10 @@ beside its fields.
   layout from the active modules. Disabling only flips `enabled`: records and
   configuration stay.
   Enabling writes the activation row only. The migration enables `budget`,
-  `real-estate` and `development` on every existing workspace. The dashboard, the alerts
-  and the account page are not modules, but the dashboard reads and shows only the
+  `real-estate` and `development` on every existing workspace. The seed enables the same
+  default set on a new personal workspace, or the keys in `SEED_WORKSPACE_MODULES`; it
+  only adds missing rows, so a module disabled later stays disabled. The dashboard, the
+  alerts and the account page are not modules, but the dashboard reads and shows only the
   sections of active modules, and the alert page, banner and export hide the alerts of
   inactive ones (`ALERT_KIND_MODULES`; the stored episodes are left untouched). The
   `/modules` page lets an `OWNER` or `ADMIN` enable or disable the modules that have a

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   Badge,
   Card,
@@ -101,6 +102,11 @@ export default async function AiCostsPage({
       <PageHeader
         title="Coûts IA"
         description={`Cycle : ${overview.cycleLabel}.`}
+        actions={
+          <Link href="/ai-costs/inbox" className="text-sm underline underline-offset-2">
+            Coûts non alloués
+          </Link>
+        }
       />
 
       <AiCostsTabs current="overview" />

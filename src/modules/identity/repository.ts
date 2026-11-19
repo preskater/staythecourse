@@ -1,5 +1,5 @@
 import { getPrisma } from "@/lib/db";
-import { activeModules, DEFAULT_MODULES } from "@/modules/catalog/catalog";
+import { activeModules, DEFAULT_MODULES, type ModuleKey } from "@/modules/catalog/catalog";
 import { type ActiveWorkspace, defaultWorkspaceId } from "@/modules/identity/workspace";
 
 /**
@@ -121,11 +121,18 @@ export async function listMemberships(userId: string): Promise<ActiveWorkspace[]
 }
 
 /**
- * Gives the owner their personal workspace with the default modules. Used by the seed
+ * Gives the owner their personal workspace with the given modules. Used by the seed
  * script; idempotent and writes the same rows as the migration backfills, so neither
- * path duplicates the other. A module the owner disabled since stays disabled.
+ * path duplicates the other.
+ *
+ * Only missing module rows are added: a module the owner disabled since stays disabled,
+ * and one they enabled outside the initial set stays enabled. Changing the seed value
+ * therefore never rewrites an existing deployment's choices.
  */
-export async function ensureDefaultWorkspace(userId: string): Promise<void> {
+export async function ensureDefaultWorkspace(
+  userId: string,
+  moduleKeys: readonly ModuleKey[] = DEFAULT_MODULES,
+): Promise<void> {
   const workspaceId = defaultWorkspaceId(userId);
   const prisma = getPrisma();
 
@@ -141,7 +148,7 @@ export async function ensureDefaultWorkspace(userId: string): Promise<void> {
       update: {},
     }),
     prisma.workspaceModule.createMany({
-      data: DEFAULT_MODULES.map((moduleKey) => ({ workspaceId, moduleKey })),
+      data: moduleKeys.map((moduleKey) => ({ workspaceId, moduleKey })),
       skipDuplicates: true,
     }),
   ]);

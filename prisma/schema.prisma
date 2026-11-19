@@ -230,6 +230,23 @@ enum CostEntryStatus {
   FINALIZED
 }
 
+/// Lifecycle of an agent (M13-01). Not part of its configuration: changing it
+/// creates no version.
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+  RETIRED
+}
+
+/// How an allocation policy turns its targets into shares (M9-03).
+enum AllocationPolicyKind {
+  MANUAL
+  EQUAL_SEAT
+  USAGE_WEIGHTED
+  REVENUE_WEIGHTED
+  FIXED_PERCENTAGE
+}
+
 /// A space (personal, family, company) whose members share its data.
 /// Every budget, real-estate, integration and alert record belongs to one (M7-04).
 model Workspace {
@@ -269,6 +286,8 @@ model Workspace {
   auditEvents          AuditEvent[]
   exchangeRates        ExchangeRateSnapshot[]
   costEntries          CostEntry[]
+  agents               Agent[]
+  allocationPolicies   AllocationPolicy[]
 }
 
 /// Activation of one catalog module (`src/modules/catalog`) in one workspace. The key is
@@ -1427,27 +1446,67 @@ model CostEntry {
 /// This is a child table: it carries no `workspaceId` and is reached only through
 /// its entry, which is workspace-scoped (M7-04). A finalized entry locks every write.
 model CostAllocation {
-  id            String   @id @default(cuid())
-  entryId       String
-  amount        Decimal  @db.Decimal(18, 2)
-  projectId     String?
-  clientId      String?
-  repository    String?
-  developerId   String?
-  agentId       String?
-  issueId       String?
-  pullRequestId String?
-  environment   String?
-  tags          String[] @default([])
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  id              String   @id @default(cuid())
+  entryId         String
+  amount          Decimal  @db.Decimal(18, 2)
+  projectId       String?
+  clientId        String?
+  repository      String?
+  developerId     String?
+  agentId         String?
+  issueId         String?
+  pullRequestId   String?
+  environment     String?
+  tags            String[] @default([])
+  /// The policy version that produced this split; null for a hand-entered allocation.
+  policyVersionId String?
+  /// The weight the policy read for this target (seats, usage, revenue, percent or amount).
+  policyMeasure   Decimal? @db.Decimal(30, 10)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
 
-  entry CostEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  entry         CostEntry                @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  policyVersion AllocationPolicyVersion? @relation(fields: [policyVersionId], references: [id], onDelete: NoAction)
 
   @@index([entryId])
+  @@index([policyVersionId])
   @@index([projectId])
   @@index([clientId])
   @@index([repository])
+}
+
+/// A named, workspace-scoped way to split costs (M9-03). Never deleted: archiving
+/// hides it from new applications while its versions keep explaining past splits.
+model AllocationPolicy {
+  id          String               @id @default(cuid())
+  workspaceId String
+  name        String
+  kind        AllocationPolicyKind
+  archivedAt  DateTime?            @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  AllocationPolicyVersion[]
+
+  @@unique([workspaceId, name])
+}
+
+/// An immutable snapshot of a policy's targets. Editing a policy inserts a new version;
+/// allocations keep pointing at the version that produced them.
+model AllocationPolicyVersion {
+  id        String   @id @default(cuid())
+  policyId  String
+  version   Int
+  rationale String
+  /// Validated target list: `[{ dimensions, percent? }]` (see `policy.ts`).
+  targets   Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  policy      AllocationPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  allocations CostAllocation[]
+
+  @@unique([policyId, version])
 }
 
 /// One security-relevant or data-changing action, kept for the owner's own review.
@@ -1518,4 +1577,44 @@ model ExchangeRateSnapshot {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, baseCurrency, quoteCurrency, rateDate], map: "ExchangeRateSnapshot_workspace_pair_rateDate_idx")
+}
+
+/// An agent configuration tracked by the workspace (M13-01). The platform never runs
+/// it. Name and status live here; everything that changes behaviour lives in versions.
+model Agent {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  status      AgentStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  AgentVersion[]
+
+  @@unique([workspaceId, name])
+}
+
+/// An immutable configuration snapshot. Insert-only: runs (M13-02) reference the
+/// exact version that produced them. `fingerprint` is the SHA-256 of the canonical
+/// configuration (see `src/modules/agents/config.ts`).
+model AgentVersion {
+  id               String   @id @default(cuid())
+  agentId          String
+  version          Int
+  /// `{ primary: { provider, model }, fallbacks: [{ provider, model }] }`.
+  modelPolicy      Json
+  tools            String[]
+  /// A workspace member's user id, checked at write time. No foreign key, so a
+  /// version stays readable after the member leaves.
+  ownerId          String
+  /// `owner/repository` names: access metadata, never credentials.
+  repositoryScopes String[]
+  fingerprint      String   @db.Char(64)
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+  @@index([agentId, fingerprint])
 }
