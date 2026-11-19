@@ -117,6 +117,11 @@ export type AiCostRecord = {
   amount: string;
   /** ISO 4217 code, uppercase. */
   currency: string;
+  /**
+   * Further provider dimensions (user, API key, line item, source...). A key that is
+   * absent is **unknown**: an adapter never fills it with a guess.
+   */
+  dimensions: Readonly<Record<string, string>>;
 };
 
 export type AiPageStop = "MAX_PAGES" | "RATE_LIMITED" | "NETWORK";
@@ -139,7 +144,11 @@ export interface AiProviderAdapter {
   readonly requiredScopes: readonly string[];
   testAuth(request: AiRequest): Promise<AiAuthResult>;
   discover(request: AiRequest): Promise<AiDiscovery>;
-  listUsage(request: AiPageRequest): Promise<AiPageOutcome<AiUsageRecord>>;
+  /**
+   * Absent when the adapter does not import usage: the interface must then say "not
+   * tracked" rather than show an empty list, which would read as "no usage".
+   */
+  listUsage?(request: AiPageRequest): Promise<AiPageOutcome<AiUsageRecord>>;
   listCosts(request: AiPageRequest): Promise<AiPageOutcome<AiCostRecord>>;
 }
 
@@ -315,7 +324,10 @@ export function assertCostRecord(record: Partial<Record<keyof AiCostRecord, unkn
     typeof record.amount !== "string" ||
     !DECIMAL.test(record.amount) ||
     typeof record.currency !== "string" ||
-    !CURRENCY.test(record.currency)
+    !CURRENCY.test(record.currency) ||
+    typeof record.dimensions !== "object" ||
+    record.dimensions === null ||
+    !Object.values(record.dimensions).every(isText)
   ) {
     throw invalid("Enregistrement de coût");
   }

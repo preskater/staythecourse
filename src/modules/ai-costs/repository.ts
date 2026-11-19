@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import type { Prisma } from "@/generated/prisma/client";
 import { getPrisma } from "@/lib/db";
+import type { AiCostRecord } from "@/modules/integrations/ai-adapter";
 import { parseDateOnly, toDateOnlyString } from "@/lib/dates";
 import { money, type Currency } from "@/lib/money";
 import {
@@ -1072,4 +1073,81 @@ export async function summarizeUnallocatedCosts(
         entryCount,
       };
     });
+}
+
+/**
+ * Imported AI provider cost lines (M11-02).
+ *
+ * Upserted on `(workspaceId, connectionKey, externalId)`: a re-run of the same window
+ * rewrites the lines it already holds — a provider may revise a day that was still
+ * open — and never adds a duplicate.
+ */
+export async function upsertAiCostLines(
+  workspaceId: string,
+  input: {
+    connectionKey: string;
+    provider: string;
+    records: readonly AiCostRecord[];
+    fetchedAt: Date;
+  },
+): Promise<number> {
+  const prisma = getPrisma();
+
+  await prisma.$transaction(
+    input.records.map((record) => {
+      const values = {
+        provider: input.provider,
+        scopeId: record.scopeId,
+        model: record.model,
+        periodStart: record.periodStart,
+        periodEnd: record.periodEnd,
+        amount: new Decimal(record.amount),
+        currency: record.currency,
+        dimensions: { ...record.dimensions },
+        fetchedAt: input.fetchedAt,
+      };
+
+      return prisma.aiCostLine.upsert({
+        where: {
+          workspaceId_connectionKey_externalId: {
+            workspaceId,
+            connectionKey: input.connectionKey,
+            externalId: record.externalId,
+          },
+        },
+        create: {
+          workspaceId,
+          connectionKey: input.connectionKey,
+          externalId: record.externalId,
+          ...values,
+        },
+        update: values,
+      });
+    }),
+  );
+
+  return input.records.length;
+}
+
+/**
+ * Stored total per currency of the lines whose bucket starts inside `[start, end)`:
+ * the imported side of a reconciliation, summed by PostgreSQL in exact decimals.
+ */
+export async function sumAiCostLines(
+  workspaceId: string,
+  input: { connectionKey: string; start: Date; end: Date },
+): Promise<Map<string, Decimal>> {
+  const rows = await getPrisma().aiCostLine.groupBy({
+    by: ["currency"],
+    where: {
+      workspaceId,
+      connectionKey: input.connectionKey,
+      periodStart: { gte: input.start, lt: input.end },
+    },
+    _sum: { amount: true },
+  });
+
+  return new Map(
+    rows.map((row) => [row.currency, new Decimal(row._sum.amount?.toString() ?? "0")]),
+  );
 }

@@ -287,6 +287,7 @@ model Workspace {
   exchangeRates        ExchangeRateSnapshot[]
   costEntries          CostEntry[]
   agents               Agent[]
+  aiCostLines          AiCostLine[]
   allocationPolicies   AllocationPolicy[]
 }
 
@@ -1617,4 +1618,38 @@ model AgentVersion {
 
   @@unique([agentId, version])
   @@index([agentId, fingerprint])
+}
+
+/// One cost line imported from an AI provider (M11-02): metadata only, never a prompt,
+/// a completion or any content. Keyed by the connection and the provider's stable line
+/// key, so a re-run updates the line instead of adding one.
+model AiCostLine {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  /// Stable identifier of the provider connection. Until AI connections are stored
+  /// (M11-05) the caller chooses it; it then becomes that connection's id.
+  connectionKey String
+  /// `AiProvider` code, for example `OPENAI`.
+  provider      String
+  externalId    String
+  /// Provider project or workspace; `null` means unknown.
+  scopeId       String?
+  model         String?
+  /// UTC instants of the provider bucket: start inclusive, end exclusive.
+  periodStart   DateTime @db.Timestamptz(3)
+  periodEnd     DateTime @db.Timestamptz(3)
+  /// Provider precision, before any rounding to cents in the ledger. Signed.
+  amount        Decimal  @db.Decimal(24, 10)
+  currency      String   @db.Char(3)
+  /// Known dimensions only (`apiKeyId`, `lineItem`...); an absent key is unknown.
+  dimensions    Json     @default("{}")
+  /// Instant of the synchronisation that last wrote the line.
+  fetchedAt     DateTime @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, connectionKey, externalId])
+  @@index([workspaceId, connectionKey, periodStart])
 }

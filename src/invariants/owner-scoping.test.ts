@@ -128,6 +128,26 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
     ],
     saveAlertRules: [OWNER, [{ kind: "fixture", enabled: true }]],
     listCostEntries: [OWNER, {}],
+    upsertAiCostLines: [
+      OWNER,
+      {
+        connectionKey: "fixture",
+        provider: "OPENAI",
+        records: [
+          {
+            externalId: "fixture",
+            scopeId: null,
+            model: null,
+            periodStart: date,
+            periodEnd: date,
+            amount: "12.34",
+            currency: "USD",
+            dimensions: {},
+          },
+        ],
+        fetchedAt: date,
+      },
+    ],
     createCostEntry: [
       OWNER,
       {
