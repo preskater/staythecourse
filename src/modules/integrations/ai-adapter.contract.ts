@@ -20,6 +20,8 @@ export type AiContractHarness = {
   adapter: AiProviderAdapter;
   /** A fake credential: the suite checks it never leaks into errors or records. */
   token: string;
+  /** `""` for the provider's public API; a self-hosted URL for `CUSTOM`. */
+  instanceUrl: string;
   transports: {
     /** Auth and discovery succeed; usage and costs span at least two pages each. */
     healthy: () => typeof fetch;
@@ -44,10 +46,11 @@ const RANGE = {
 type Listing = "listUsage" | "listCosts";
 
 export function describeAiAdapterContract(harness: AiContractHarness): void {
-  const { adapter, token, transports } = harness;
+  const { adapter, token, instanceUrl, transports } = harness;
 
   const page = (fetchImpl: typeof fetch, extra: Partial<AiPageRequest> = {}): AiPageRequest => ({
     token,
+    instanceUrl,
     fetchImpl,
     ...RANGE,
     cursor: null,
@@ -90,23 +93,23 @@ export function describeAiAdapterContract(harness: AiContractHarness): void {
     });
 
     it("tests a valid credential without exposing it", async () => {
-      const result = await adapter.testAuth({ token, fetchImpl: transports.healthy() });
+      const result = await adapter.testAuth({ token, instanceUrl, fetchImpl: transports.healthy() });
       expect(result.accountLabel.length).toBeGreaterThan(0);
       expect(JSON.stringify(result)).not.toContain(token);
     });
 
     it("reports a revoked credential as UNAUTHORIZED", async () => {
-      const error = await caught(adapter.testAuth({ token, fetchImpl: transports.revoked() }));
+      const error = await caught(adapter.testAuth({ token, instanceUrl, fetchImpl: transports.revoked() }));
       expect(error.code).toBe("UNAUTHORIZED");
     });
 
     it("reports a missing permission as FORBIDDEN", async () => {
-      const error = await caught(adapter.testAuth({ token, fetchImpl: transports.forbidden() }));
+      const error = await caught(adapter.testAuth({ token, instanceUrl, fetchImpl: transports.forbidden() }));
       expect(error.code).toBe("FORBIDDEN");
     });
 
     it("discovers valid scopes", async () => {
-      const discovery = await adapter.discover({ token, fetchImpl: transports.healthy() });
+      const discovery = await adapter.discover({ token, instanceUrl, fetchImpl: transports.healthy() });
       expect(discovery.scopes.length).toBeGreaterThan(0);
       discovery.scopes.forEach((scope) => assertAiScope(scope));
     });

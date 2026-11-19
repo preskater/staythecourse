@@ -36,12 +36,22 @@ import { parseRetryAfterSeconds, ProviderError } from "./adapter";
  *   reconciliation key: storing a record twice must update, never duplicate.
  */
 
-export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER"] as const;
+/**
+ * `CUSTOM` covers a self-hosted or less common provider (an internal gateway, an
+ * OpenAI-compatible server...): it has no public API, so its connection must give
+ * an `instanceUrl`, like a self-hosted GitLab.
+ */
+export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER", "CUSTOM"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
 export type AiRequest = {
   /** Provider credential. Server-side only. */
   token: string;
+  /**
+   * Base URL of the provider API. Empty string means the provider's public API;
+   * required for `CUSTOM`. Resolve it with `resolveAiBaseUrl`.
+   */
+  instanceUrl: string;
   /** Injected in tests. */
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
@@ -195,6 +205,39 @@ export async function collectAiPages<T>(
   }
 
   return { records, nextCursor: cursor, stoppedBy: "MAX_PAGES", pagesRead, fetchedAt: new Date() };
+}
+
+/**
+ * Base URL an adapter calls: the configured `instanceUrl`, or `publicBase` when it is
+ * empty. `publicBase` is `null` for a provider without a public API (`CUSTOM`), which
+ * then requires an `instanceUrl`.
+ */
+export function resolveAiBaseUrl(instanceUrl: string, publicBase: string | null): string {
+  const trimmed = instanceUrl.trim().replace(/\/+$/, "");
+
+  if (trimmed === "") {
+    if (publicBase === null) {
+      throw new ProviderError("INVALID_RESPONSE", "URL du fournisseur personnalisé manquante.");
+    }
+    return publicBase;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new ProviderError("INVALID_RESPONSE", "URL du fournisseur IA invalide.");
+  }
+
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new ProviderError("INVALID_RESPONSE", "L'URL du fournisseur IA doit utiliser http ou https.");
+  }
+  // The credential travels in a header: never let a URL carry its own userinfo.
+  if (parsed.username || parsed.password) {
+    throw new ProviderError("INVALID_RESPONSE", "L'URL du fournisseur IA ne doit pas contenir d'identifiants.");
+  }
+
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
 }
 
 /** Default HTTP status mapping for AI providers; adapters may refine it. */

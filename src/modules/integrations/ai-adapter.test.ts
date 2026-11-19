@@ -6,8 +6,10 @@ import {
   assertUsageRecord,
   classifyAiResponse,
   collectAiPages,
+  resolveAiBaseUrl,
   type AiCostRecord,
   type AiPageRequest,
+  type AiProvider,
   type AiProviderAdapter,
   type AiRequest,
   type AiUsageRecord,
@@ -25,10 +27,10 @@ const TOKEN = "fake-ai-key-000";
 
 type FakeList<T> = { data: T[]; next: string | null };
 
-function fakeAdapter(): AiProviderAdapter {
+function fakeAdapter(provider: AiProvider = "OPENAI", publicBase: string | null = BASE): AiProviderAdapter {
   const get = <T>(request: AiRequest, path: string) =>
     requestJson<T>({
-      url: `${BASE}${path}`,
+      url: `${resolveAiBaseUrl(request.instanceUrl, publicBase)}${path}`,
       headers: { authorization: `Bearer ${request.token}` },
       fetchImpl: request.fetchImpl ?? fetch,
       signal: request.signal,
@@ -61,7 +63,7 @@ function fakeAdapter(): AiProviderAdapter {
   const scope = (row: RawRow) => (typeof row.project === "string" ? row.project : null);
 
   return {
-    provider: "OPENAI",
+    provider,
     requiredScopes: ["usage:read"],
     async testAuth(request) {
       const me = (await get<{ name?: unknown }>(request, "/me")) ?? {};
@@ -173,20 +175,58 @@ const transport =
   () =>
     (async (input: RequestInfo | URL) => handler(new URL(String(input)))) as typeof fetch;
 
+const fakeTransports = {
+  healthy: transport(healthyResponse),
+  revoked: transport(() => json({ error: "invalid key" }, 401)),
+  forbidden: transport(() => json({ error: "missing scope" }, 403)),
+  rateLimited: transport(() => json({}, 429, { "retry-after": "30" })),
+  rateLimitedAfterFirstPage: transport((url) =>
+    pageIndex(url) > 0 ? json({}, 429, { "retry-after": "30" }) : healthyResponse(url),
+  ),
+  malformed: transport(() => json({ unexpected: true })),
+};
+
 describeAiAdapterContract({
   name: "fake",
   adapter: fakeAdapter(),
   token: TOKEN,
+  instanceUrl: "",
+  transports: fakeTransports,
+});
+
+// A self-hosted provider passes the same suite through its own base URL.
+describeAiAdapterContract({
+  name: "fake self-hosted (CUSTOM)",
+  adapter: fakeAdapter("CUSTOM", null),
+  token: TOKEN,
+  instanceUrl: "https://llm.internal.test/v1/",
   transports: {
-    healthy: transport(healthyResponse),
-    revoked: transport(() => json({ error: "invalid key" }, 401)),
-    forbidden: transport(() => json({ error: "missing scope" }, 403)),
-    rateLimited: transport(() => json({}, 429, { "retry-after": "30" })),
-    rateLimitedAfterFirstPage: transport((url) =>
-      pageIndex(url) > 0 ? json({}, 429, { "retry-after": "30" }) : healthyResponse(url),
+    ...fakeTransports,
+    healthy: transport((url) =>
+      url.host === "llm.internal.test" ? healthyResponse(url) : json({}, 404),
     ),
-    malformed: transport(() => json({ unexpected: true })),
   },
+});
+
+describe("resolveAiBaseUrl", () => {
+  it("falls back to the public API when no instance is configured", () => {
+    expect(resolveAiBaseUrl("  ", BASE)).toBe(BASE);
+  });
+
+  it("uses the configured instance without its trailing slash", () => {
+    expect(resolveAiBaseUrl("https://llm.internal.test/v1/", BASE)).toBe(
+      "https://llm.internal.test/v1",
+    );
+  });
+
+  it.each([
+    ["no URL for a provider without public API", "", null],
+    ["an unparsable URL", "not a url", null],
+    ["a non-HTTP scheme", "ftp://llm.internal.test", null],
+    ["credentials in the URL", "https://user:secret@llm.internal.test", null],
+  ])("rejects %s", (_label, instanceUrl, publicBase) => {
+    expect(() => resolveAiBaseUrl(instanceUrl, publicBase)).toThrow(ProviderError);
+  });
 });
 
 describe("collectAiPages", () => {
@@ -294,6 +334,7 @@ describe("retry convention", () => {
 
     const outcome = await fakeAdapter().listUsage({
       token: TOKEN,
+      instanceUrl: "",
       fetchImpl: retrying.fetchImpl,
       start: new Date("2026-10-01T00:00:00Z"),
       end: new Date("2026-11-01T00:00:00Z"),
