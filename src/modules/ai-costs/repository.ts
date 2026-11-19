@@ -311,6 +311,7 @@ type CostAllocationRow = {
   pullRequestId: string | null;
   environment: string | null;
   tags: string[];
+  policyVersionId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -368,11 +369,12 @@ const COST_ALLOCATION_SELECT = {
   pullRequestId: true,
   environment: true,
   tags: true,
+  policyVersionId: true,
   createdAt: true,
   updatedAt: true,
 } as const;
 
-function toStatus(value: string): CostEntryStatus {
+export function toStatus(value: string): CostEntryStatus {
   if (value !== "DRAFT" && value !== "FINALIZED") {
     throw new Error("Unknown stored cost entry status.");
   }
@@ -481,6 +483,7 @@ function toCostAllocation(row: CostAllocationRow, currency: Currency): CostAlloc
     entryId: row.entryId,
     amount: costMoney(row.amount, currency),
     dimensions: fromCostDimensionColumns(row),
+    policyVersionId: row.policyVersionId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -548,7 +551,7 @@ function allocationOrderBy() {
   return [{ createdAt: "asc" as const }, { id: "asc" as const }];
 }
 
-async function findEntryMoney(
+export async function findEntryMoney(
   tx: Prisma.TransactionClient,
   workspaceId: string,
   entryId: string,
@@ -561,7 +564,7 @@ async function findEntryMoney(
   return (row as { id: string; amount: Decimal.Value; currency: string; status: string } | null);
 }
 
-async function lockEntry(
+export async function lockEntry(
   tx: Prisma.TransactionClient,
   workspaceId: string,
   entryId: string,
