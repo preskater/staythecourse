@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { Badge, Notice, TableShell, inputClass, submitClass, tdClass, thClass } from "@/components/ui";
 import {
   buildCostImportRows,
@@ -19,6 +20,7 @@ import {
 } from "@/modules/ai-costs/import";
 import { detectDelimiter, parseCsv } from "@/modules/budget/import";
 import { importCostsAction } from "./actions";
+import { plural } from "@/lib/word";
 
 /**
  * CSV cost import, browser side: source, file, mapping, preview, import.
@@ -41,12 +43,17 @@ type SavedMapping = {
   defaultCurrency: string | null;
 };
 
+/** What the user sets; the file, the row selection and the server's answer stay outside. */
+type ImportFormValues = {
+  source: string;
+  delimiter: Delimiter;
+  hasHeader: boolean;
+  defaultCurrency: string;
+  mapping: CostImportMapping;
+};
+
 function asDelimiter(value: string): Delimiter {
   return (DELIMITERS as readonly string[]).includes(value) ? (value as Delimiter) : ";";
-}
-
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count > 1 ? "s" : ""}`;
 }
 
 const STATUS: Record<CostImportRowOutcome["status"], { label: string; tone: "neutral" | "positive" | "negative" | "warning" }> = {
@@ -63,13 +70,15 @@ export function CostCsvImporter({
   mappings: SavedMapping[];
   currencies: string[];
 }) {
-  const [source, setSource] = useState("");
+  const form = useForm<ImportFormValues>({
+    defaultValues: { source: "", delimiter: ";", hasHeader: true, defaultCurrency: "", mapping: emptyCostMapping() },
+  });
+  const [source, delimiter, hasHeader, defaultCurrency, mapping] = useWatch({
+    control: form.control,
+    name: ["source", "delimiter", "hasHeader", "defaultCurrency", "mapping"],
+  });
   const [fileName, setFileName] = useState<string | null>(null);
   const [rawText, setRawText] = useState<string | null>(null);
-  const [delimiter, setDelimiter] = useState<Delimiter>(";");
-  const [hasHeader, setHasHeader] = useState(true);
-  const [mapping, setMapping] = useState<CostImportMapping>(emptyCostMapping);
-  const [defaultCurrency, setDefaultCurrency] = useState<string>("");
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [readError, setReadError] = useState<string | null>(null);
   const [result, setResult] = useState<CostImportActionResult | null>(null);
@@ -98,20 +107,15 @@ export function CostCsvImporter({
   const ready = source.trim() !== "" && mappingReasons.length === 0 && selectedRows.length > 0 && !isPending;
 
   // Every input change invalidates the server's answer.
-  function changed<T>(setter: (value: T) => void) {
-    return (value: T) => {
-      setter(value);
-      setResult(null);
-    };
-  }
+  const invalidates = { onChange: () => setResult(null) };
 
   function applySaved(target: SavedMapping, text: string) {
     const nextDelimiter = asDelimiter(target.delimiter);
     const parsed = parseCsv(text, nextDelimiter);
-    setDelimiter(nextDelimiter);
-    setHasHeader(target.hasHeader);
-    setDefaultCurrency(target.defaultCurrency ?? "");
-    setMapping(mappingFromSaved(parsed[0] ?? [], target.columns));
+    form.setValue("delimiter", nextDelimiter);
+    form.setValue("hasHeader", target.hasHeader);
+    form.setValue("defaultCurrency", target.defaultCurrency ?? "");
+    form.setValue("mapping", mappingFromSaved(parsed[0] ?? [], target.columns));
   }
 
   async function onFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
@@ -138,9 +142,9 @@ export function CostCsvImporter({
         const detected = asDelimiter(detectDelimiter(text));
         const parsed = parseCsv(text, detected);
         const guessed = guessCostMapping(parsed[0] ?? []);
-        setDelimiter(detected);
-        setMapping(guessed);
-        setHasHeader(guessed.date !== null || guessed.label !== null);
+        form.setValue("delimiter", detected);
+        form.setValue("mapping", guessed);
+        form.setValue("hasHeader", guessed.date !== null || guessed.label !== null);
       }
     } catch {
       setReadError("Fichier illisible : vérifiez qu'il s'agit bien d'un export CSV texte.");
@@ -148,7 +152,6 @@ export function CostCsvImporter({
   }
 
   function onSourceChange(value: string) {
-    setSource(value);
     setResult(null);
     const match = mappings.find((candidate) => candidate.source.toLowerCase() === value.trim().toLowerCase());
     if (match && rawText !== null) applySaved(match, rawText);
@@ -160,7 +163,7 @@ export function CostCsvImporter({
       if (mapping[key] !== null && mapping[key] !== index && key !== field) next[key] = mapping[key];
     }
     if (field !== "ignore") next[field] = index;
-    setMapping(next);
+    form.setValue("mapping", next);
     setResult(null);
   }
 
@@ -212,10 +215,9 @@ export function CostCsvImporter({
           <input
             className={inputClass}
             list="cost-import-sources"
-            value={source}
             maxLength={80}
             placeholder="ex. OpenAI factures"
-            onChange={(event) => onSourceChange(event.target.value)}
+            {...form.register("source", { onChange: (event) => onSourceChange(event.target.value) })}
           />
           <datalist id="cost-import-sources">
             {mappings.map((candidate) => (
@@ -231,11 +233,7 @@ export function CostCsvImporter({
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Séparateur</span>
-          <select
-            className={inputClass}
-            value={delimiter}
-            onChange={(event) => changed(setDelimiter)(asDelimiter(event.target.value))}
-          >
+          <select className={inputClass} {...form.register("delimiter", invalidates)}>
             <option value=";">point-virgule ( ; )</option>
             <option value=",">virgule ( , )</option>
             <option value={"\t"}>tabulation</option>
@@ -245,11 +243,7 @@ export function CostCsvImporter({
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Devise par défaut</span>
-          <select
-            className={inputClass}
-            value={defaultCurrency}
-            onChange={(event) => changed(setDefaultCurrency)(event.target.value)}
-          >
+          <select className={inputClass} {...form.register("defaultCurrency", invalidates)}>
             <option value="">Aucune (colonne « Devise » requise)</option>
             {currencies.map((currency) => (
               <option key={currency} value={currency}>
@@ -261,11 +255,7 @@ export function CostCsvImporter({
       </div>
 
       <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={hasHeader}
-          onChange={(event) => changed(setHasHeader)(event.target.checked)}
-        />
+        <input type="checkbox" {...form.register("hasHeader", invalidates)} />
         La première ligne du fichier est un en-tête de colonnes (nécessaire pour réutiliser
         l&apos;association)
       </label>
