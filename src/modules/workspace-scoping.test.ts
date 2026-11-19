@@ -25,6 +25,7 @@ const table = {
 const prisma = {
   account: table,
   exchangeRateSnapshot: table,
+  costEntry: table,
   property: table,
   propertyLoan: table,
   propertyValuation: { create: createValuationMock },
@@ -33,6 +34,7 @@ const prisma = {
   alert: table,
   integrationConnection: table,
   issueSnapshot: table,
+  agent: table,
   // Interactive transactions hand the same fake client back to the callback.
   $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
 };
@@ -53,9 +55,9 @@ const {
 } = await import("./micro-business/repository");
 const { dismissAlert, listAlerts } = await import("./alerts/repository");
 const { findConnectionForSync, listIssues } = await import("./integrations/repository");
-const { findExchangeRateSnapshotById, recordExchangeRate } = await import(
-  "./ai-costs/repository"
-);
+const { findExchangeRateSnapshotById, readAiCostOverviewLedger, recordExchangeRate } =
+  await import("./ai-costs/repository");
+const { findAgent, updateAgentDetails } = await import("./agents/repository");
 
 const FOREIGN = "ws-someone-else";
 
@@ -214,6 +216,14 @@ describe("integrations", () => {
 });
 
 describe("ai-costs", () => {
+  it("reads the overview from the given workspace only", async () => {
+    await readAiCostOverviewLedger("ws-1", new Date("2026-11-01"), new Date("2026-12-01"));
+    for (const call of findManyMock.mock.calls) {
+      expect((call[0] as { where: unknown }).where).toMatchObject({ workspaceId: "ws-1" });
+    }
+    expect(findManyMock).toHaveBeenCalledTimes(2);
+  });
+
   it("reads a foreign workspace's exchange rate as not found", async () => {
     expect(await findExchangeRateSnapshotById(FOREIGN, "rate-1")).toBeNull();
     expect(where(findFirstMock)).toEqual({ id: "rate-1", workspaceId: FOREIGN });
@@ -243,5 +253,19 @@ describe("ai-costs", () => {
     expect(createMock.mock.calls[0][0]).toMatchObject({
       data: { workspaceId: "ws-1", baseCurrency: "USD", quoteCurrency: "EUR" },
     });
+  });
+});
+
+describe("agents", () => {
+  it("reads a foreign workspace's agent as not found", async () => {
+    findFirstMock.mockResolvedValueOnce(null);
+    expect(await findAgent(FOREIGN, "agent-1")).toBeNull();
+    expect(where(findFirstMock)).toEqual({ id: "agent-1", workspaceId: FOREIGN });
+  });
+
+  it("never renames another workspace's agent", async () => {
+    updateManyMock.mockResolvedValueOnce({ count: 0 });
+    expect(await updateAgentDetails(FOREIGN, "agent-1", { name: "x" })).toBe(false);
+    expect(where(updateManyMock)).toEqual({ id: "agent-1", workspaceId: FOREIGN });
   });
 });

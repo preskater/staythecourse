@@ -15,7 +15,14 @@ const ROLES: WorkspaceRole[] = ["OWNER", "ADMIN", "MEMBER", "VIEWER"];
  * implementation together, which is the point of pinning the matrix in a test.
  */
 const EXPECTED: Record<WorkspaceRole, Permission[]> = {
-  OWNER: ["read", "write", "export", "manage-modules", "manage-members"],
+  OWNER: [
+    "read",
+    "write",
+    "export",
+    "manage-modules",
+    "manage-members",
+    "read-internal-rates",
+  ],
   ADMIN: ["read", "write", "export", "manage-modules", "manage-members"],
   MEMBER: ["read", "write", "export"],
   VIEWER: ["read"],

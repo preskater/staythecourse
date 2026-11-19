@@ -9,6 +9,8 @@ import Link from "next/link";
 export const MICRO_BUSINESS_TABS = [
   { href: "/micro-business", label: "Clients et projets" },
   { href: "/micro-business/revenue", label: "Revenus" },
+  { href: "/micro-business/rates", label: "Tarifs" },
+  { href: "/micro-business/expenses", label: "Charges" },
 ] as const;
 
 export type MicroBusinessTab = (typeof MICRO_BUSINESS_TABS)[number]["href"];

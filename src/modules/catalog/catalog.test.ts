@@ -6,6 +6,7 @@ import {
   MODULE_CATALOG,
   MODULE_KEYS,
   moduleNavLinks,
+  selectModules,
   validateModuleChange,
   type ModuleKey,
 } from "./catalog";
@@ -57,6 +58,45 @@ describe("activeModules", () => {
     ];
 
     expect(activeModules(stored)).toEqual(["real-estate"]);
+  });
+});
+
+describe("selectModules", () => {
+  it("keeps the default set when the variable is not set", () => {
+    expect(selectModules(undefined)).toEqual({ status: "ok", modules: [...DEFAULT_MODULES] });
+  });
+
+  it("trims, deduplicates and returns the selection in catalog order", () => {
+    expect(selectModules(" development , budget,budget ")).toEqual({
+      status: "ok",
+      modules: ["budget", "development"],
+    });
+  });
+
+  it("accepts a module whose prerequisites are selected too", () => {
+    expect(selectModules("profitability,real-estate,budget")).toEqual({
+      status: "ok",
+      modules: ["budget", "real-estate", "profitability"],
+    });
+  });
+
+  it.each(["", "  ", ",", " , "])("refuses the empty value %j", (raw) => {
+    expect(selectModules(raw)).toEqual({ status: "empty" });
+  });
+
+  it.each(["billing", "Budget", "__proto__", "budget,,billing"])(
+    "refuses the unknown key in %j",
+    (raw) => {
+      expect(selectModules(raw)).toMatchObject({ status: "unknown_module" });
+    },
+  );
+
+  it("refuses a module enabled without its prerequisites", () => {
+    expect(selectModules("budget,profitability")).toEqual({
+      status: "missing_prerequisites",
+      key: "profitability",
+      missing: ["real-estate"],
+    });
   });
 });
 

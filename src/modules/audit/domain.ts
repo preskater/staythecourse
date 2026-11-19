@@ -41,8 +41,18 @@ export const AUDIT_ACTIONS = [
   "revenue.payment",
   "revenue.refund",
   "revenue.write_off",
+  // Recurring business expenses (M10-05): definitions, never ledger rows.
+  "business_expense.create",
+  "business_expense.delete",
+  // CSV cost import (M9-05): counts and the import identifier, never a row.
+  "cost.import",
+  // Unallocated-cost inbox (M9-06): bulk actions, counts and the policy version only.
+  "cost.allocate",
+  "cost.finalize",
   // Configuration that changes what the dashboard computes.
   "rate.write",
+  "rate.billing_write",
+  "rate.internal_write",
   "module.enable",
   "module.disable",
   // Provider connections and deferred reads.
@@ -73,6 +83,11 @@ export const AUDIT_ENTITY_TYPES = [
   "TRANSFER",
   "REVENUE_DOCUMENT",
   "SALARY_RATE",
+  "BILLING_RATE",
+  "INTERNAL_COST_RATE",
+  "BUSINESS_EXPENSE",
+  "COST_IMPORT",
+  "COST_ENTRY",
   "MODULE",
   "INTEGRATION",
   "OPERATION",

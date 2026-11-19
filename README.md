@@ -180,6 +180,20 @@ Working today:
   refused and the message names the credit-note path; a credit note never exceeds the
   remaining balance. Recognition is a frozen date + amount snapshot (versioned rules
   arrive with M15-01), and the monthly summary shows no row for a month without data.
+- Rate cards (`/micro-business/rates`): effective-dated client billing rates and
+  confidential internal loaded-cost rates, kept as separate change points — the most
+  recent entry at or before the month wins, and a month before the first entry has no
+  rate rather than a guessed default. Saving the same month corrects it; rates are never
+  deleted and no stored amount is recomputed. Internal rates require the
+  `read-internal-rates` permission (owner only until M18-01): without it the page never
+  queries or renders them.
+- Recurring business expenses (`/micro-business/expenses`): software renewals,
+  contractors, insurance and planning reserves, with monthly, quarterly or yearly
+  cadence. Due dates are computed on read from the start date — day-of-month clamped to
+  the month's length, end date inclusive — so re-rendering can never duplicate an
+  occurrence, and nothing is written to the budget. Every amount is a planning estimate:
+  no payment is made and this is not tax advice. Definitions are created and deleted;
+  no occurrence row exists to edit.
 - Property events (real-estate, « Échéances et obligations »): taxes, insurance,
   maintenance, leases, inspections, loan deadlines and renovation tracked as dated
   reminders — kind, optional calendar date, status (planned, done, cancelled), notes and
@@ -253,7 +267,7 @@ cp .env.example .env
 # 3. Start PostgreSQL and prepare the database
 docker compose up -d --wait db
 npm run db:migrate
-npm run db:seed          # creates the owner from SEED_OWNER_* variables
+npm run db:seed          # creates the owner and their personal workspace from SEED_* variables
 
 # 4. Run
 npm run dev              # http://localhost:3000
@@ -271,10 +285,10 @@ docker compose --profile full up -d --build
 ```
 
 The `migrate` service applies pending migrations, then the `seed` service creates
-the owner account from `SEED_OWNER_*`, or refreshes the name of the one that exists.
-Both exit; `app` starts only once they succeeded, so a failed migration or a missing
-account never boots a server. Inspect them with
-`docker compose --profile full logs migrate seed`.
+the owner account from `SEED_OWNER_*`, or refreshes the name of the one that exists,
+together with their personal workspace and its initial modules. Both exit; `app`
+starts only once they succeeded, so a failed migration or a missing account never
+boots a server. Inspect them with `docker compose --profile full logs migrate seed`.
 
 The seed is idempotent and runs on every `up`. It writes `SEED_OWNER_PASSWORD` when
 it creates the account, then leaves the stored hash alone: a password changed from
@@ -283,6 +297,13 @@ which is also how a forgotten password is replaced — set
 `SEED_OWNER_FORCE_PASSWORD=true` and run `up -d` again, or run that step alone with
 `docker compose --profile full run --rm seed`. The seed prints which of the two it
 did.
+
+`SEED_WORKSPACE_MODULES` chooses the modules enabled in the personal workspace on
+first seed (default `budget,real-estate,development`, see the keys in
+[`src/modules/catalog/catalog.ts`](src/modules/catalog/catalog.ts)). The seed only
+adds missing module rows: a module the owner disabled from `/modules` stays disabled,
+and an existing deployment needs no re-seed. `npm run db:verify-seed` checks the rows
+a fresh seed must produce, including that a second run created no duplicate.
 
 Without a profile, `docker compose up -d` starts PostgreSQL only.
 
@@ -420,6 +441,7 @@ the fictitious values. The ones that matter most:
 | `AUTH_TRUST_HOST` | Auth.js host trust; the compose stack sets `true`. |
 | `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`, `SEED_OWNER_NAME` | Create the single owner account. There is no public sign-up. |
 | `SEED_OWNER_FORCE_PASSWORD` | `true` overwrites the stored hash with `SEED_OWNER_PASSWORD`; left unset, a password changed from the Compte page is kept. |
+| `SEED_WORKSPACE_MODULES` | Comma-separated module keys enabled in the personal workspace on first seed (`budget,real-estate,development` by default). Missing prerequisites are refused. |
 | `NEXT_PUBLIC_DEFAULT_CURRENCY`, `NEXT_PUBLIC_DEFAULT_TIME_ZONE` | Interface defaults (`EUR`, `Europe/Paris`); the only variables shipped to the browser. |
 | `APP_BIND_HOST`, `APP_PORT` | Host interface and port published by the Compose application (`0.0.0.0:3000` by default). Use `APP_BIND_HOST=127.0.0.1` for local-only access. |
 | `APP_HOST`, `PROXY_PORT` | Address and host port served by the proxy when that proxy is enabled. |
@@ -443,7 +465,8 @@ secret must never be added to that block.
 | `npm run db:generate` | Generate the Prisma client into `src/generated/prisma` (required before typecheck, tests or build) |
 | `npm run db:migrate` | Create and apply a migration (development) |
 | `npm run db:deploy` | Apply pending migrations (deployment) |
-| `npm run db:seed` | Create the owner account, or refresh its name (the stored password is kept) |
+| `npm run db:seed` | Create the owner, their personal workspace and initial modules, or refresh the owner name (the stored password is kept) |
+| `npm run db:verify-seed` | Check a fresh or throwaway database has one owner, one personal `OWNER` workspace and the selected modules, after running the seed twice |
 | `npm run db:cleanup` | Delete synchronisation runs older than 90 days (keeps the latest success per connection) and audit events older than 365 days |
 | `npm run audit:operation -- backup.run SUCCESS` | Record an operator backup/restore in the audit trail |
 | `npm run db:studio` | Browse the database |
@@ -555,7 +578,8 @@ repository's own scripts and fictitious values only.
   internals are in `infra/backups/README.md`.
 - Apply migrations and create the owner before the application starts: the
   `migrate` and `seed` services do both, or run them alone with
-  `docker compose --profile full run --rm migrate` / `run --rm seed`.
+  `docker compose --profile full run --rm migrate` / `run --rm seed`. The seed also
+  creates the personal workspace and its initial module set.
 - `SEED_OWNER_PASSWORD` is written when the seed creates the account, or when
   `SEED_OWNER_FORCE_PASSWORD=true`: a password changed from the Compte page survives
   a restart or a redeploy. Keep the value out of the image; rotate it by editing

@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import { assertCurrency, type Currency } from "@/lib/money";
 import { getPrisma } from "@/lib/db";
+import type { RecurrenceFrequency } from "@/modules/budget/recurrence";
 import type {
   BillingModel,
   ClientSummary,
@@ -8,6 +9,8 @@ import type {
   ProjectSummary,
 } from "./domain";
 import type { RevenueDocumentKind, RevenueDocumentRecord } from "./revenue";
+import type { BillingRateRecord, InternalCostRateRecord } from "./rates";
+import type { BusinessExpenseKind, BusinessExpenseRecord } from "./expenses";
 
 /**
  * Micro-business persistence. Every query is scoped to the workspace resolved from the
@@ -450,6 +453,101 @@ export async function createRevenueDocument(
   });
 }
 
+/**
+ * Recurring business expense persistence (M10-05).
+ *
+ * A definition is read and written as a whole; occurrences are never stored, so the
+ * table has no unique date key to maintain and no materialisation can duplicate. Every
+ * query is workspace-scoped.
+ */
+
+const BUSINESS_EXPENSE_SELECT = {
+  id: true,
+  label: true,
+  vendor: true,
+  kind: true,
+  amount: true,
+  currency: true,
+  frequency: true,
+  startDate: true,
+  endDate: true,
+  notes: true,
+} as const;
+
+type BusinessExpenseRow = {
+  id: string;
+  label: string;
+  vendor: string | null;
+  kind: string;
+  amount: Decimal;
+  currency: string;
+  frequency: string;
+  startDate: Date;
+  endDate: Date | null;
+  notes: string | null;
+};
+
+function toBusinessExpenseRecord(row: BusinessExpenseRow): BusinessExpenseRecord {
+  return {
+    id: row.id,
+    label: row.label,
+    vendor: row.vendor,
+    kind: row.kind as BusinessExpenseKind,
+    amount: new Decimal(row.amount.toString()),
+    currency: assertCurrency(row.currency),
+    frequency: row.frequency as RecurrenceFrequency,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    notes: row.notes,
+  };
+}
+
+/** Every definition of the workspace, by start date then label. */
+export async function listBusinessExpenses(
+  workspaceId: string,
+): Promise<BusinessExpenseRecord[]> {
+  const rows = await getPrisma().businessExpense.findMany({
+    where: { workspaceId },
+    select: BUSINESS_EXPENSE_SELECT,
+    orderBy: [{ startDate: "asc" }, { label: "asc" }],
+  });
+
+  return rows.map(toBusinessExpenseRecord);
+}
+
+export type BusinessExpenseWriteInput = {
+  workspaceId: string;
+  label: string;
+  vendor: string | null;
+  kind: BusinessExpenseKind;
+  amount: Decimal;
+  currency: Currency;
+  frequency: RecurrenceFrequency;
+  startDate: Date;
+  endDate: Date | null;
+  notes: string | null;
+};
+
+export async function createBusinessExpense(
+  input: BusinessExpenseWriteInput,
+): Promise<{ id: string }> {
+  return getPrisma().businessExpense.create({
+    data: {
+      workspaceId: input.workspaceId,
+      label: input.label.trim(),
+      vendor: input.vendor,
+      kind: input.kind,
+      amount: input.amount.toFixed(2),
+      currency: input.currency,
+      frequency: input.frequency,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      notes: input.notes,
+    },
+    select: { id: true },
+  });
+}
+
 export type RevenueMovementWriteInput =
   | {
       type: "PAYMENT";
@@ -523,4 +621,196 @@ export async function createRevenueMovement(
         select: { id: true },
       });
   }
+}
+
+/**
+ * Rate persistence (M10-03).
+ *
+ * Both tables are change points keyed by month. Saving an existing month corrects it
+ * (upsert); nothing is deleted, so a period never loses the rate that was in force.
+ * The internal rows are only ever read through a permission check in the page and the
+ * action; this module itself has no notion of the caller's role.
+ */
+
+const BILLING_RATE_SELECT = {
+  id: true,
+  clientId: true,
+  year: true,
+  month: true,
+  hourlyRate: true,
+  currency: true,
+  client: { select: { name: true } },
+} as const;
+
+type BillingRateRow = {
+  id: string;
+  clientId: string;
+  year: number;
+  month: number;
+  hourlyRate: Decimal;
+  currency: string;
+  client: { name: string };
+};
+
+const INTERNAL_COST_RATE_SELECT = {
+  id: true,
+  year: true,
+  month: true,
+  hourlyRate: true,
+  currency: true,
+} as const;
+
+type InternalCostRateRow = {
+  id: string;
+  year: number;
+  month: number;
+  hourlyRate: Decimal;
+  currency: string;
+};
+
+function toBillingRateRecord(row: BillingRateRow): BillingRateRecord {
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    clientName: row.client.name,
+    year: row.year,
+    month: row.month,
+    hourlyRate: new Decimal(row.hourlyRate.toString()),
+    currency: assertCurrency(row.currency),
+  };
+}
+
+function toInternalCostRateRecord(row: InternalCostRateRow): InternalCostRateRecord {
+  return {
+    id: row.id,
+    year: row.year,
+    month: row.month,
+    hourlyRate: new Decimal(row.hourlyRate.toString()),
+    currency: assertCurrency(row.currency),
+  };
+}
+
+/** Every billing change point of the workspace, client name then most recent first. */
+export async function listBillingRates(
+  workspaceId: string,
+): Promise<BillingRateRecord[]> {
+  const rows = await getPrisma().billingRate.findMany({
+    where: { workspaceId },
+    select: BILLING_RATE_SELECT,
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+  });
+
+  return rows
+    .map(toBillingRateRecord)
+    .sort(
+      (left, right) =>
+        left.clientName.localeCompare(right.clientName) ||
+        right.year - left.year ||
+        right.month - left.month,
+    );
+}
+
+/** Every internal cost change point of the workspace, most recent first. */
+export async function listInternalCostRates(
+  workspaceId: string,
+): Promise<InternalCostRateRecord[]> {
+  const rows = await getPrisma().internalCostRate.findMany({
+    where: { workspaceId },
+    select: INTERNAL_COST_RATE_SELECT,
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+  });
+
+  return rows.map(toInternalCostRateRecord);
+}
+
+export type BillingRateWriteInput = {
+  workspaceId: string;
+  clientId: string;
+  year: number;
+  month: number;
+  hourlyRate: Decimal;
+  currency: Currency;
+};
+
+/** Creates or corrects the client's change point for the month; `null` = foreign client. */
+export async function upsertBillingRate(
+  input: BillingRateWriteInput,
+): Promise<BillingRateRecord | null> {
+  const client = await getPrisma().client.findFirst({
+    where: { id: input.clientId, workspaceId: input.workspaceId },
+    select: { id: true },
+  });
+  if (!client) {
+    return null;
+  }
+
+  const hourlyRate = input.hourlyRate.toFixed(2);
+  const row = await getPrisma().billingRate.upsert({
+    where: {
+      clientId_year_month: {
+        clientId: input.clientId,
+        year: input.year,
+        month: input.month,
+      },
+    },
+    create: {
+      workspaceId: input.workspaceId,
+      clientId: input.clientId,
+      year: input.year,
+      month: input.month,
+      hourlyRate,
+      currency: input.currency,
+    },
+    update: { hourlyRate, currency: input.currency },
+    select: BILLING_RATE_SELECT,
+  });
+
+  return toBillingRateRecord(row);
+}
+
+export type InternalCostRateWriteInput = {
+  workspaceId: string;
+  year: number;
+  month: number;
+  hourlyRate: Decimal;
+  currency: Currency;
+};
+
+/** Creates or corrects the workspace's internal cost change point for the month. */
+export async function upsertInternalCostRate(
+  input: InternalCostRateWriteInput,
+): Promise<InternalCostRateRecord> {
+  const hourlyRate = input.hourlyRate.toFixed(2);
+  const row = await getPrisma().internalCostRate.upsert({
+    where: {
+      workspaceId_year_month: {
+        workspaceId: input.workspaceId,
+        year: input.year,
+        month: input.month,
+      },
+    },
+    create: {
+      workspaceId: input.workspaceId,
+      year: input.year,
+      month: input.month,
+      hourlyRate,
+      currency: input.currency,
+    },
+    update: { hourlyRate, currency: input.currency },
+    select: INTERNAL_COST_RATE_SELECT,
+  });
+
+  return toInternalCostRateRecord(row);
+}
+
+/** Deletes one definition, workspace-scoped; `false` means "gone or not yours". */
+export async function deleteBusinessExpense(
+  workspaceId: string,
+  expenseId: string,
+): Promise<boolean> {
+  const { count } = await getPrisma().businessExpense.deleteMany({
+    where: { id: expenseId, workspaceId },
+  });
+
+  return count === 1;
 }

@@ -1,0 +1,327 @@
+import Decimal from "decimal.js";
+import { formatDateOnly, formatInstant, formatMonthLabel, monthRange } from "@/lib/dates";
+import { assertCurrency, formatMoney, money } from "@/lib/money";
+import { ACTUALITY_LABELS, type Actuality } from "./actuality";
+import { fromStoredActuality } from "./ledger";
+
+/**
+ * AI cost overview (M12-01): the read-only first page of the « Coûts IA » module.
+ *
+ * Every KPI carries its formula, period and sources, and a state that keeps "no data",
+ * "not connected" and an error apart: a missing figure is never rendered as zero.
+ *
+ * Only the ledger (`CostEntry`, M9-02) feeds figures today. Budgets (M12-03), the
+ * billing-cycle forecast (M12-04) and usage metrics — requests, token classes, cache
+ * hits — from the provider adapters (M11) have no data source yet, so those KPIs read
+ * "not connected" until their milestone lands.
+ *
+ * The output is strings only: no `Decimal` and no `Date` crosses into the page.
+ */
+
+export type KpiState = "ok" | "no-data" | "not-connected" | "error";
+
+export const KPI_STATE_LABELS: Record<KpiState, string> = {
+  ok: "À jour",
+  "no-data": "Aucune donnée",
+  "not-connected": "Non connecté",
+  error: "Erreur",
+};
+
+export type KpiDto = {
+  key: string;
+  label: string;
+  state: KpiState;
+  /** Formatted figure; `null` whenever the state is not `ok`. */
+  value: string | null;
+  /** Why the figure is what it is, or why it is missing. */
+  detail: string | null;
+  formula: string;
+  period: string;
+  sources: string;
+};
+
+export type SpendRowDto = {
+  currency: string;
+  actuality: string;
+  amount: string;
+  entryCount: string;
+};
+
+export type FreshnessRowDto = {
+  source: string;
+  state: KpiState;
+  lastCapturedAt: string | null;
+  detail: string | null;
+};
+
+export type AiCostOverviewDto = {
+  cycleLabel: string;
+  kpis: KpiDto[];
+  spendRows: SpendRowDto[];
+  freshness: FreshnessRowDto[];
+};
+
+/** A ledger row as the overview needs it: amount, currency, trust, period and source. */
+export type OverviewEntryRow = {
+  amount: Decimal.Value;
+  currency: string;
+  actuality: string;
+  periodEnd: Date;
+};
+
+/** The most recent capture of one source (kind + provider). */
+export type OverviewSourceRow = {
+  sourceKind: string;
+  sourceProvider: string | null;
+  sourceCapturedAt: Date;
+};
+
+/** What the repository returned, or that the ledger could not be read at all. */
+export type OverviewLedger =
+  | { state: "ok"; entries: readonly OverviewEntryRow[]; sources: readonly OverviewSourceRow[] }
+  | { state: "error" };
+
+export type BillingCycle = {
+  /** First day, inclusive (date-only, UTC midnight). */
+  start: Date;
+  /** First day of the next cycle, exclusive. */
+  end: Date;
+  /** Today, in the owner's time zone. */
+  today: Date;
+};
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The current billing cycle: the calendar month containing `today`.
+ *
+ * ponytail: calendar month only; switch to a configured cycle start day when the
+ * billing-cycle forecast (M12-04) adds one.
+ */
+export function currentBillingCycle(today: Date): BillingCycle {
+  const { start, end } = monthRange(today.getUTCFullYear(), today.getUTCMonth() + 1);
+  return { start, end, today };
+}
+
+const SOURCE_KIND_LABELS: Record<string, string> = {
+  IMPORT: "Import de fichier",
+  MANUAL: "Saisie manuelle",
+};
+
+function sourceLabel(row: OverviewSourceRow): string {
+  return row.sourceKind === "PROVIDER"
+    ? `Fournisseur : ${row.sourceProvider ?? "inconnu"}`
+    : (SOURCE_KIND_LABELS[row.sourceKind] ?? row.sourceKind);
+}
+
+const LEDGER_SOURCES = "Registre des coûts";
+const LEDGER_ERROR = "Registre illisible, réessayez plus tard.";
+
+function cyclePeriod(cycle: BillingCycle): string {
+  const last = new Date(cycle.end.getTime() - DAY_MS);
+  return `Du ${formatDateOnly(cycle.start)} au ${formatDateOnly(last)} (mois civil)`;
+}
+
+/** The cycle as a month name ("novembre 2026"): the exact days are in the page header. */
+function cycleMonth(cycle: BillingCycle): string {
+  return formatMonthLabel(cycle.start.getUTCFullYear(), cycle.start.getUTCMonth() + 1);
+}
+
+function missing(
+  base: Omit<KpiDto, "state" | "value" | "detail">,
+  state: Exclude<KpiState, "ok">,
+  detail: string,
+): KpiDto {
+  return { ...base, state, value: null, detail };
+}
+
+/** Per-currency totals, never converted: one currency per line, in a stable order. */
+function totalsByCurrency(entries: readonly OverviewEntryRow[]): Map<string, Decimal> {
+  const totals = new Map<string, Decimal>();
+  for (const entry of entries) {
+    const current = totals.get(entry.currency) ?? new Decimal(0);
+    totals.set(entry.currency, current.plus(new Decimal(entry.amount.toString())));
+  }
+  return new Map([...totals].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function spendRows(entries: readonly OverviewEntryRow[]): SpendRowDto[] {
+  const groups = new Map<string, { currency: string; actuality: Actuality; total: Decimal; count: number }>();
+
+  for (const entry of entries) {
+    const actuality = fromStoredActuality(entry.actuality);
+    const key = `${entry.currency}:${actuality}`;
+    const group = groups.get(key) ?? { currency: entry.currency, actuality, total: new Decimal(0), count: 0 };
+    group.total = group.total.plus(new Decimal(entry.amount.toString()));
+    group.count += 1;
+    groups.set(key, group);
+  }
+
+  return [...groups.values()]
+    .sort((a, b) => a.currency.localeCompare(b.currency) || a.actuality.localeCompare(b.actuality))
+    .map((group) => ({
+      currency: group.currency,
+      actuality: ACTUALITY_LABELS[group.actuality],
+      amount: formatMoney(money(group.total, assertCurrency(group.currency))),
+      entryCount: String(group.count),
+    }));
+}
+
+function spendKpi(ledger: OverviewLedger, cycle: BillingCycle): KpiDto {
+  const base = {
+    key: "spend",
+    label: "Dépense du cycle",
+    formula: "Somme des entrées du mois, remboursements inclus, par devise.",
+    period: cycleMonth(cycle),
+    sources: LEDGER_SOURCES,
+  };
+
+  if (ledger.state === "error") return missing(base, "error", LEDGER_ERROR);
+  if (ledger.entries.length === 0) {
+    return missing(base, "no-data", "Aucune entrée ce mois-ci.");
+  }
+
+  const value = [...totalsByCurrency(ledger.entries)]
+    .map(([currency, total]) => formatMoney(money(total, assertCurrency(currency))))
+    .join(" · ");
+  // An entry is counted in the cycle its period starts in, even if it runs past it.
+  const overlapping = ledger.entries.filter((entry) => entry.periodEnd >= cycle.end).length;
+  const detail = [
+    `${ledger.entries.length} entrée(s)`,
+    overlapping > 0 ? `dont ${overlapping} se prolongeant sur le cycle suivant` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return { ...base, state: "ok", value, detail };
+}
+
+function cycleProgressKpi(cycle: BillingCycle): KpiDto {
+  const total = Math.round((cycle.end.getTime() - cycle.start.getTime()) / DAY_MS);
+  const elapsed = Math.round((cycle.today.getTime() - cycle.start.getTime()) / DAY_MS) + 1;
+  const percent = Math.floor((elapsed * 100) / total);
+
+  return {
+    key: "cycle-progress",
+    label: "Progression du cycle",
+    state: "ok",
+    value: `${percent} %`,
+    detail: `Jour ${elapsed} sur ${total}`,
+    formula: "Jours écoulés ÷ jours du mois.",
+    period: cycleMonth(cycle),
+    sources: "Calendrier",
+  };
+}
+
+/** KPIs whose data source arrives with a later milestone: always "not connected" today. */
+function pendingKpis(cycle: BillingCycle): KpiDto[] {
+  const period = cycleMonth(cycle);
+  const usage = "Fournisseurs IA";
+
+  return [
+    missing(
+      {
+        key: "budget",
+        label: "Dépense vs budget",
+        formula: "Dépense ÷ budget, par devise.",
+        period,
+        sources: "Budgets IA",
+      },
+      "not-connected",
+      "Pas encore de budget IA.",
+    ),
+    missing(
+      {
+        key: "forecast",
+        label: "Prévision fin de cycle",
+        formula: "Dépense projetée à fin de mois.",
+        period,
+        sources: "Prévision",
+      },
+      "not-connected",
+      "Pas encore de prévision.",
+    ),
+    missing(
+      {
+        key: "requests",
+        label: "Requêtes",
+        formula: "Requêtes facturées sur le mois.",
+        period,
+        sources: usage,
+      },
+      "not-connected",
+      "Aucun fournisseur connecté.",
+    ),
+    missing(
+      {
+        key: "tokens",
+        label: "Classes de tokens",
+        formula: "Tokens entrée, sortie et cache.",
+        period,
+        sources: usage,
+      },
+      "not-connected",
+      "Aucun fournisseur connecté.",
+    ),
+    missing(
+      {
+        key: "cache-rate",
+        label: "Taux de cache",
+        formula: "Lus en cache ÷ (entrée + lus en cache).",
+        period,
+        sources: usage,
+      },
+      "not-connected",
+      "Aucun fournisseur connecté.",
+    ),
+  ];
+}
+
+function freshnessRows(ledger: OverviewLedger, timeZone: string): FreshnessRowDto[] {
+  if (ledger.state === "error") {
+    return [{ source: "Registre des coûts", state: "error", lastCapturedAt: null, detail: LEDGER_ERROR }];
+  }
+
+  const rows: FreshnessRowDto[] = ledger.sources
+    .map((source) => ({
+      source: sourceLabel(source),
+      state: "ok" as const,
+      lastCapturedAt: formatInstant(source.sourceCapturedAt, { timeZone }),
+      detail: null,
+    }))
+    .sort((a, b) => a.source.localeCompare(b.source));
+
+  // No provider has an adapter yet: say so rather than leave the table silently short.
+  if (!ledger.sources.some((source) => source.sourceKind === "PROVIDER")) {
+    rows.push({
+      source: "Fournisseurs IA (API)",
+      state: "not-connected",
+      lastCapturedAt: null,
+      detail: "Aucun fournisseur synchronisé.",
+    });
+  }
+
+  if (ledger.sources.length === 0) {
+    rows.unshift({
+      source: "Registre des coûts",
+      state: "no-data",
+      lastCapturedAt: null,
+      detail: "Aucune entrée enregistrée.",
+    });
+  }
+
+  return rows;
+}
+
+export function buildAiCostOverview(
+  ledger: OverviewLedger,
+  cycle: BillingCycle,
+  timeZone: string,
+): AiCostOverviewDto {
+  return {
+    cycleLabel: cyclePeriod(cycle),
+    kpis: [spendKpi(ledger, cycle), cycleProgressKpi(cycle), ...pendingKpis(cycle)],
+    spendRows: ledger.state === "ok" ? spendRows(ledger.entries) : [],
+    freshness: freshnessRows(ledger, timeZone),
+  };
+}

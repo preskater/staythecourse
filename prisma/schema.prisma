@@ -76,6 +76,15 @@ enum RevenueDocumentKind {
   CREDIT_NOTE
 }
 
+/// What a recurring business outflow is. `RESERVE` is a planning envelope (for example
+/// a social-charge reserve); every kind is an estimate for planning, never a payment or
+/// tax advice.
+enum BusinessExpenseKind {
+  EXPENSE
+  OBLIGATION
+  RESERVE
+}
+
 /// Recurring obligations of a property that are not financial transactions yet.
 enum PropertyEventKind {
   TAX
@@ -221,6 +230,23 @@ enum CostEntryStatus {
   FINALIZED
 }
 
+/// Lifecycle of an agent (M13-01). Not part of its configuration: changing it
+/// creates no version.
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+  RETIRED
+}
+
+/// How an allocation policy turns its targets into shares (M9-03).
+enum AllocationPolicyKind {
+  MANUAL
+  EQUAL_SEAT
+  USAGE_WEIGHTED
+  REVENUE_WEIGHTED
+  FIXED_PERCENTAGE
+}
+
 /// A space (personal, family, company) whose members share its data.
 /// Every budget, real-estate, integration and alert record belongs to one (M7-04).
 model Workspace {
@@ -252,11 +278,17 @@ model Workspace {
   revenuePayments      RevenuePayment[]
   revenueRefunds       RevenueRefund[]
   revenueWriteOffs     RevenueWriteOff[]
+  billingRates         BillingRate[]
+  internalCostRates    InternalCostRate[]
+  businessExpenses     BusinessExpense[]
   alerts               Alert[]
   alertRules           AlertRule[]
   auditEvents          AuditEvent[]
   exchangeRates        ExchangeRateSnapshot[]
   costEntries          CostEntry[]
+  costImportMappings   CostImportMapping[]
+  agents               Agent[]
+  allocationPolicies   AllocationPolicy[]
 }
 
 /// Activation of one catalog module (`src/modules/catalog`) in one workspace. The key is
@@ -270,7 +302,7 @@ model WorkspaceModule {
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@id([workspaceId, moduleKey])
 }
@@ -283,7 +315,7 @@ model WorkspaceMember {
   role        WorkspaceRole
   createdAt   DateTime      @default(now()) @db.Timestamptz(3)
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
@@ -299,24 +331,24 @@ model User {
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
-  accounts    Account[]
-  categories  Category[]
-  transactions Transaction[]
-  budgets     Budget[]
-  salarySetting SalarySetting?
-  salaryRates SalaryRate[]
-  workDays    WorkDay[]
-  recurringEntries RecurringEntry[]
+  accounts             Account[]
+  categories           Category[]
+  transactions         Transaction[]
+  budgets              Budget[]
+  salarySetting        SalarySetting?
+  salaryRates          SalaryRate[]
+  workDays             WorkDay[]
+  recurringEntries     RecurringEntry[]
   recurringOccurrences RecurringOccurrence[]
-  goals       Goal[]
-  goalContributions GoalContribution[]
-  properties  Property[]
-  connections IntegrationConnection[]
-  alerts      Alert[]
-  alertRules  AlertRule[]
-  auditEvents AuditEvent[]
-  memberships WorkspaceMember[]
-  sessions    Session[]
+  goals                Goal[]
+  goalContributions    GoalContribution[]
+  properties           Property[]
+  connections          IntegrationConnection[]
+  alerts               Alert[]
+  alertRules           AlertRule[]
+  auditEvents          AuditEvent[]
+  memberships          WorkspaceMember[]
+  sessions             Session[]
 }
 
 /// One signed-in browser session, persisted so the owner can revoke it.
@@ -342,45 +374,45 @@ model Session {
 
 /// A manually tracked account. No banking credentials are ever stored here.
 model Account {
-  id        String      @id @default(cuid())
+  id                  String      @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId    String?
-  workspaceId String
-  name      String
-  type      AccountType @default(CHECKING)
-  currency  String      @default("EUR") @db.Char(3)
+  userId              String?
+  workspaceId         String
+  name                String
+  type                AccountType @default(CHECKING)
+  currency            String      @default("EUR") @db.Char(3)
   /// Optional owner-defined low-balance floor, in the account currency. Null means
   /// "no explicit floor": the simulation suggests one from the account's expenses,
   /// while the alert engine falls back to the global LOW_BALANCE rule.
-  lowBalanceThreshold Decimal? @db.Decimal(18, 2)
-  archivedAt DateTime?
-  createdAt DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime    @updatedAt @db.Timestamptz(3)
+  lowBalanceThreshold Decimal?    @db.Decimal(18, 2)
+  archivedAt          DateTime?
+  createdAt           DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime    @updatedAt @db.Timestamptz(3)
 
-  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  user             User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions     Transaction[]
   recurringEntries RecurringEntry[]
-  goals        Goal[]
+  goals            Goal[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
 }
 
 model Category {
-  id        String       @id @default(cuid())
+  id          String       @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId    String?
+  userId      String?
   workspaceId String
-  name      String
-  kind      CategoryKind
-  createdAt DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime     @updatedAt @db.Timestamptz(3)
+  name        String
+  kind        CategoryKind
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
 
-  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
-  budgets      Budget[]
+  user             User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions     Transaction[]
+  budgets          Budget[]
   recurringEntries RecurringEntry[]
 
   @@unique([workspaceId, name, kind])
@@ -388,22 +420,22 @@ model Category {
 }
 
 model Transaction {
-  id       String          @id @default(cuid())
+  id              String          @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId   String?
-  workspaceId String
-  accountId String
-  categoryId String?
-  type     TransactionType
-  label    String
+  userId          String?
+  workspaceId     String
+  accountId       String
+  categoryId      String?
+  type            TransactionType
+  label           String
   /// Signed amount in the account currency: negative for an outflow.
-  amount   Decimal         @db.Decimal(18, 2)
-  currency String          @default("EUR") @db.Char(3)
+  amount          Decimal         @db.Decimal(18, 2)
+  currency        String          @default("EUR") @db.Char(3)
   /// Operation date, distinct from createdAt and from any synchronisation date.
-  operationDate DateTime  @db.Date
-  notes    String?
+  operationDate   DateTime        @db.Date
+  notes           String?
   /// Stable identifier of the source record, used to make imports re-runnable.
-  externalRef String?
+  externalRef     String?
   /// Shared by the two movements of an internal transfer created in one action;
   /// `null` for every single-leg entry, including a transfer typed by hand. Both
   /// legs keep their own account's currency: a linked transfer only exists within
@@ -412,15 +444,15 @@ model Transaction {
   /// Day the line was checked against a bank statement. `null` means "not checked
   /// yet" — a normal state, never an error — and ticking never changes the amount,
   /// the date or the account.
-  reconciledAt DateTime?   @db.Date
-  createdAt DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime      @updatedAt @db.Timestamptz(3)
+  reconciledAt    DateTime?       @db.Date
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
 
-  user      User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  account   Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  category  Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  cashflows PropertyCashflow[]
+  user                User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account             Account              @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category            Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  cashflows           PropertyCashflow[]
   recurringOccurrence RecurringOccurrence?
 
   @@unique([accountId, externalRef])
@@ -435,22 +467,22 @@ model Transaction {
 /// category may carry one budget per currency — and exactly one, which the unique
 /// constraint enforces.
 model Budget {
-  id         String   @id @default(cuid())
+  id          String   @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId     String?
+  userId      String?
   workspaceId String
-  categoryId String
-  year       Int
+  categoryId  String
+  year        Int
   /// 1-based month, as a human writes it.
-  month      Int
-  currency   String   @default("EUR") @db.Char(3)
-  amount     Decimal  @db.Decimal(18, 2)
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  month       Int
+  currency    String   @default("EUR") @db.Char(3)
+  amount      Decimal  @db.Decimal(18, 2)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
-  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, categoryId, year, month, currency])
   @@index([workspaceId, year, month])
@@ -459,18 +491,18 @@ model Budget {
 /// The simulator's options, common to every month: the default length of a plannable
 /// day and the currency. The hourly rate itself is month-scoped (see `SalaryRate`).
 model SalarySetting {
-  id         String   @id @default(cuid())
+  id          String   @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId     String?  @unique
-  workspaceId String @unique
+  userId      String?  @unique
+  workspaceId String   @unique
   /// Default length of a plannable day, in hours. Applies to future clicks only.
-  hoursPerDay Decimal @db.Decimal(4, 2)
-  currency   String   @default("EUR") @db.Char(3)
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  hoursPerDay Decimal  @db.Decimal(4, 2)
+  currency    String   @default("EUR") @db.Char(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 /// One hourly-rate change point: the rate applies **from this month on**, until the next
@@ -478,19 +510,19 @@ model SalarySetting {
 /// effective-dated wage; a month before the first entry has no rate at all (its
 /// simulation is unavailable rather than computed from an invented default).
 model SalaryRate {
-  id         String   @id @default(cuid())
+  id          String   @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId     String?
+  userId      String?
   workspaceId String
-  year       Int
-  month      Int
+  year        Int
+  month       Int
   /// Exact hourly rate, in the simulator's currency.
-  hourlyRate Decimal  @db.Decimal(18, 2)
-  createdAt  DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  hourlyRate  Decimal  @db.Decimal(18, 2)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, year, month])
 }
@@ -499,19 +531,19 @@ model SalaryRate {
 /// `PLANNED` feeds the simulated budget, `WORKED` the real amount. One row per owner
 /// and day, which the unique constraint enforces; the third click removes the row.
 model WorkDay {
-  id     String        @id @default(cuid())
+  id          String        @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId String?
+  userId      String?
   workspaceId String
-  date   DateTime      @db.Date
-  status WorkDayStatus @default(PLANNED)
+  date        DateTime      @db.Date
+  status      WorkDayStatus @default(PLANNED)
   /// Hours for this day, adjustable by half-hours.
-  hours  Decimal       @db.Decimal(4, 2)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  hours       Decimal       @db.Decimal(4, 2)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, date])
 }
@@ -523,27 +555,27 @@ model WorkDay {
 /// creation path as a manually typed transaction. `amount` is a positive magnitude;
 /// `type` carries the direction, the way a budget's category kind carries it.
 model RecurringEntry {
-  id         String              @id @default(cuid())
+  id          String              @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId     String?
+  userId      String?
   workspaceId String
-  accountId  String
-  categoryId String?
-  type       TransactionType
-  label      String
+  accountId   String
+  categoryId  String?
+  type        TransactionType
+  label       String
   /// Planned magnitude, always positive; the sign comes from `type` at confirmation.
-  amount     Decimal             @db.Decimal(18, 2)
-  frequency  RecurrenceFrequency @default(MONTHLY)
+  amount      Decimal             @db.Decimal(18, 2)
+  frequency   RecurrenceFrequency @default(MONTHLY)
   /// First day of the series; its day-of-month is the recurring day (31 → end of
   /// shorter months, see `occurrenceDatesForMonth`).
-  startDate  DateTime            @db.Date
+  startDate   DateTime            @db.Date
   /// Last day of the series, inclusive. Null means the series has no end.
-  endDate    DateTime?           @db.Date
-  createdAt  DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime            @updatedAt @db.Timestamptz(3)
+  endDate     DateTime?           @db.Date
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
 
-  user        User?                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   account     Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
   category    Category?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   occurrences RecurringOccurrence[]
@@ -563,7 +595,7 @@ model RecurringOccurrence {
   id            String                    @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
   userId        String?
-  workspaceId String
+  workspaceId   String
   recurringId   String
   /// Calendar day of the occurrence, a `DATE` like every operation date.
   date          DateTime                  @db.Date
@@ -574,8 +606,8 @@ model RecurringOccurrence {
   createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime                  @updatedAt @db.Timestamptz(3)
 
-  user        User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   recurring   RecurringEntry @relation(fields: [recurringId], references: [id], onDelete: Cascade)
   transaction Transaction?   @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
@@ -594,23 +626,23 @@ model RecurringOccurrence {
 /// never as zero. A linked account must carry the goal's currency and takes no
 /// contributions: no conversion ever happens.
 model Goal {
-  id           String     @id @default(cuid())
+  id            String     @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId       String?
-  workspaceId String
-  name         String
-  targetAmount Decimal    @db.Decimal(18, 2)
-  currency     String     @default("EUR") @db.Char(3)
-  targetDate   DateTime   @db.Date
-  status       GoalStatus @default(ACTIVE)
+  userId        String?
+  workspaceId   String
+  name          String
+  targetAmount  Decimal    @db.Decimal(18, 2)
+  currency      String     @default("EUR") @db.Char(3)
+  targetDate    DateTime   @db.Date
+  status        GoalStatus @default(ACTIVE)
   /// Manual current amount, never negative; mutually exclusive with `accountId`.
-  currentAmount Decimal?  @db.Decimal(18, 2)
-  accountId    String?
-  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime   @updatedAt @db.Timestamptz(3)
+  currentAmount Decimal?   @db.Decimal(18, 2)
+  accountId     String?
+  createdAt     DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime   @updatedAt @db.Timestamptz(3)
 
-  user          User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user          User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   account       Account?           @relation(fields: [accountId], references: [id], onDelete: SetNull)
   contributions GoalContribution[]
 
@@ -625,21 +657,21 @@ model Goal {
 /// account's balance and takes no contributions. `amount` is a positive magnitude in
 /// the goal's currency, like a budget amount.
 model GoalContribution {
-  id     String   @id @default(cuid())
+  id          String   @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId String?
+  userId      String?
   workspaceId String
-  goalId String
+  goalId      String
   /// Positive magnitude, in the goal's currency.
-  amount Decimal  @db.Decimal(18, 2)
+  amount      Decimal  @db.Decimal(18, 2)
   /// Day the amount was set aside, a `DATE` like every operation date.
-  date   DateTime @db.Date
-  note   String?
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  date        DateTime @db.Date
+  note        String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  goal      Goal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, goalId, date])
 }
@@ -651,39 +683,39 @@ model GoalContribution {
 /// converted: a figure is only ever compared with another figure of the same currency.
 /// A missing price reads "unknown", never zero.
 model Property {
-  id        String            @id @default(cuid())
+  id                 String            @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId    String?
-  workspaceId String
-  name      String
-  address   String?
-  occupancy PropertyOccupancy @default(VACANT)
+  userId             String?
+  workspaceId        String
+  name               String
+  address            String?
+  occupancy          PropertyOccupancy @default(VACANT)
   /// Reference currency of the prices below.
-  currency  String            @default("EUR") @db.Char(3)
-  purchaseDate  DateTime?     @db.Date
+  currency           String            @default("EUR") @db.Char(3)
+  purchaseDate       DateTime?         @db.Date
   /// Acquisition price, positive; null = not recorded.
-  purchasePrice Decimal?      @db.Decimal(18, 2)
+  purchasePrice      Decimal?          @db.Decimal(18, 2)
   /// Latest estimated market value, dated by `estimatedValueAsOf`; null = not recorded.
-  estimatedValue Decimal?     @db.Decimal(18, 2)
-  estimatedValueAsOf DateTime? @db.Date
+  estimatedValue     Decimal?          @db.Decimal(18, 2)
+  estimatedValueAsOf DateTime?         @db.Date
   /// Margin in percent required above the break-even sale price (10 by default).
-  targetGainRate Decimal      @default(10) @db.Decimal(5, 2)
+  targetGainRate     Decimal           @default(10) @db.Decimal(5, 2)
   /// Sale date, set together with `salePrice`; null = the property is not sold.
-  saleDate  DateTime?         @db.Date
+  saleDate           DateTime?         @db.Date
   /// Sale price, positive; null while the property is not sold (or not recorded).
-  salePrice Decimal?          @db.Decimal(18, 2)
+  salePrice          Decimal?          @db.Decimal(18, 2)
   /// Selling costs (agency, diagnostics...), positive; null = not recorded.
-  saleCosts Decimal?          @db.Decimal(18, 2)
-  notes     String?
-  createdAt DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime          @updatedAt @db.Timestamptz(3)
+  saleCosts          Decimal?          @db.Decimal(18, 2)
+  notes              String?
+  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @db.Timestamptz(3)
 
-  user      User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  cashflows PropertyCashflow[]
-  loans     PropertyLoan[]
+  user       User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace  Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  cashflows  PropertyCashflow[]
+  loans      PropertyLoan[]
   valuations PropertyValuation[]
-  events    PropertyEvent[]
+  events     PropertyEvent[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -752,21 +784,21 @@ model PropertyLoan {
 /// and `amount` stays null; property totals resolve the linked transaction instead
 /// of adding a second amount.
 model PropertyCashflow {
-  id            String        @id @default(cuid())
+  id            String       @id @default(cuid())
   propertyId    String
   /// A transaction can be attached to at most one property.
-  transactionId String?       @unique
+  transactionId String?      @unique
   kind          CashflowKind
   /// Signed amount, only set for standalone entries (no linked transaction).
-  amount        Decimal?      @db.Decimal(18, 2)
-  currency      String        @default("EUR") @db.Char(3)
+  amount        Decimal?     @db.Decimal(18, 2)
+  currency      String       @default("EUR") @db.Char(3)
   label         String
   /// Expected date for a charge or a rent; distinct from the settlement date.
-  dueDate       DateTime?     @db.Date
-  settledAt     DateTime?     @db.Date
+  dueDate       DateTime?    @db.Date
+  settledAt     DateTime?    @db.Date
   notes         String?
-  createdAt     DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime      @updatedAt @db.Timestamptz(3)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
 
   property    Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
@@ -791,9 +823,10 @@ model Client {
   createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  projects  Project[]
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projects         Project[]
   revenueDocuments RevenueDocument[]
+  billingRates     BillingRate[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -823,10 +856,10 @@ model Project {
   createdAt    DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   /// `SetNull` only matters for a client row removed by a future maintenance path:
   /// archiving a client keeps its projects linked.
-  client    Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client           Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
   revenueDocuments RevenueDocument[]
 
   @@unique([workspaceId, name])
@@ -939,6 +972,91 @@ model RevenueWriteOff {
   @@index([documentId])
 }
 
+/// One billing-rate change point for a client: the rate applies **from this month on**,
+/// until the next entry. Resolving a month means reading the most recent entry at or
+/// before it, like the salary change points of the budget module. The rate is stored
+/// only here — no document copies it — so correcting a change point never rewrites an
+/// amount that was already computed elsewhere.
+///
+/// A rate belongs to a client, not to a project: the same client may be billed at the
+/// same rate on several projects. The currency is explicit and never converted.
+model BillingRate {
+  id          String   @id @default(cuid())
+  workspaceId String
+  clientId    String
+  year        Int
+  /// 1-based month, as a human writes it.
+  month       Int
+  hourlyRate  Decimal  @db.Decimal(18, 2)
+  currency    String   @default("EUR") @db.Char(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// A client with rate history is never silently removed; archiving keeps it linked.
+  client    Client    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@unique([clientId, year, month])
+  @@index([workspaceId, clientId, year, month])
+}
+
+/// One confidential internal-cost change point, effective from its month until the
+/// next entry. It is deliberately a different record from `BillingRate`: a billing
+/// rate is what the client pays, an internal rate is what the work costs, and the two
+/// are never merged into one figure. The internal rate is readable only with the
+/// dedicated `read-internal-rates` permission (owner only until M18-01).
+model InternalCostRate {
+  id          String   @id @default(cuid())
+  workspaceId String
+  year        Int
+  /// 1-based month, as a human writes it.
+  month       Int
+  /// Loaded hourly cost (labour plus overhead), in the workspace's reference currency.
+  hourlyRate  Decimal  @db.Decimal(18, 2)
+  currency    String   @default("EUR") @db.Char(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, year, month])
+}
+
+/// A recurring business outflow: software renewals, contractors, insurance, or a
+/// planning reserve (for example social charges).
+///
+/// The definition never writes to the budget ledger. Its occurrences are computed from
+/// the cadence and the start date on read, so re-running the computation cannot create
+/// a duplicate. `amount` is a positive magnitude in the record's currency; every figure
+/// is a planning estimate, never a payment, an accounting entry or tax advice.
+///
+/// Cadence and due-day rules are the budget module's: counted from the start month, with
+/// the start day clamped to the month's length (31 → 28/29 February, 30 April), and the
+/// end date inclusive.
+model BusinessExpense {
+  id          String              @id @default(cuid())
+  workspaceId String
+  label       String
+  /// Payee or supplier, free text, optional.
+  vendor      String?
+  kind        BusinessExpenseKind @default(EXPENSE)
+  /// Positive magnitude, in the record's currency.
+  amount      Decimal             @db.Decimal(18, 2)
+  currency    String              @default("EUR") @db.Char(3)
+  frequency   RecurrenceFrequency @default(MONTHLY)
+  /// First day of the series; its day-of-month is the renewal day.
+  startDate   DateTime            @db.Date
+  /// Last day of the series, inclusive; null means no end.
+  endDate     DateTime?           @db.Date
+  notes       String?
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, startDate])
+}
+
 /// A dated obligation of a property: a tax, an insurance premium, a lease renewal,
 /// an inspection, a loan deadline or renovation work.
 ///
@@ -975,33 +1093,33 @@ model PropertyEvent {
 /// Secrets are never returned to the browser; `credentialsCiphertext` holds the
 /// encrypted token (AES-256-GCM, key from INTEGRATION_ENCRYPTION_KEY).
 model IntegrationConnection {
-  id       String              @id @default(cuid())
+  id                    String              @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
-  userId   String?
-  workspaceId String
-  provider IntegrationProvider
+  userId                String?
+  workspaceId           String
+  provider              IntegrationProvider
   /// GitLab may be self-hosted. Empty string means the provider's public instance,
   /// which keeps the uniqueness constraint reliable (NULL is not comparable in PostgreSQL).
-  instanceUrl String           @default("")
+  instanceUrl           String              @default("")
   /// Owner, group or organisation whose projects are tracked.
-  externalOwner String?
+  externalOwner         String?
   /// Permissions actually granted by the provider.
-  permissions   String[]
-  status        IntegrationStatus @default(NOT_CONNECTED)
-  lastSyncedAt  DateTime?         @db.Timestamptz(3)
-  lastSyncError String?
+  permissions           String[]
+  status                IntegrationStatus   @default(NOT_CONNECTED)
+  lastSyncedAt          DateTime?           @db.Timestamptz(3)
+  lastSyncError         String?
   credentialsCiphertext String?
-  createdAt     DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime          @updatedAt @db.Timestamptz(3)
+  createdAt             DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime            @updatedAt @db.Timestamptz(3)
 
-  user      User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  snapshots ProjectSnapshot[]
-  issues    IssueSnapshot[]
-  milestones MilestoneSnapshot[]
+  user         User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  snapshots    ProjectSnapshot[]
+  issues       IssueSnapshot[]
+  milestones   MilestoneSnapshot[]
   cacheEntries ProviderCacheEntry[]
-  ciRuns    CiRunSnapshot[]
-  syncRuns  SyncRun[]
+  ciRuns       CiRunSnapshot[]
+  syncRuns     SyncRun[]
 
   @@unique([workspaceId, provider, instanceUrl])
   @@index([workspaceId])
@@ -1043,33 +1161,33 @@ model ProjectSnapshot {
 /// Closed issues are not kept: a row disappears at the next synchronisation, which
 /// is what makes the list a to-do list rather than an archive.
 model IssueSnapshot {
-  id           String              @id @default(cuid())
-  connectionId String
-  provider     IntegrationProvider
+  id            String              @id @default(cuid())
+  connectionId  String
+  provider      IntegrationProvider
   /// Provider identifier, kept so a re-run updates instead of duplicating.
-  externalId   String
-  kind         IssueKind
+  externalId    String
+  kind          IssueKind
   /// Repository full name, for example "owner/repo".
-  repository   String
-  number       Int
-  title        String
-  url          String
-  authorLogin  String?
+  repository    String
+  number        Int
+  title         String
+  url           String
+  authorLogin   String?
   /// Logins of the assignees. Empty means nobody picked it up yet, which is a state
   /// worth seeing, not a missing value.
-  assignees    String[]
+  assignees     String[]
   /// Milestone title, as displayed by the provider. `null` means "no milestone":
   /// GitHub has no milestone notion beyond a title here, so no foreign key is kept.
-  milestone    String?
+  milestone     String?
   commentsCount Int
-  labels       String[]
+  labels        String[]
   /// Instant the issue was opened at the provider.
-  openedAt     DateTime            @db.Timestamptz(3)
+  openedAt      DateTime            @db.Timestamptz(3)
   /// Instant of the last activity at the provider (comment, label, edit).
-  activityAt   DateTime            @db.Timestamptz(3)
-  fetchedAt    DateTime            @db.Timestamptz(3)
-  createdAt    DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime            @updatedAt @db.Timestamptz(3)
+  activityAt    DateTime            @db.Timestamptz(3)
+  fetchedAt     DateTime            @db.Timestamptz(3)
+  createdAt     DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @db.Timestamptz(3)
 
   connection IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
@@ -1240,8 +1358,8 @@ model Alert {
   createdAt   DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, fingerprint])
   @@index([workspaceId, status])
@@ -1259,7 +1377,7 @@ model AlertRule {
   id                String    @id @default(cuid())
   /// Legacy author column, kept nullable for rollback (M7-04); scoping uses `workspaceId`.
   userId            String?
-  workspaceId String
+  workspaceId       String
   kind              AlertKind
   enabled           Boolean   @default(true)
   thresholdAmount   Decimal?  @db.Decimal(18, 2)
@@ -1269,8 +1387,8 @@ model AlertRule {
   createdAt         DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, kind])
 }
@@ -1294,6 +1412,9 @@ model CostEntry {
   sourceRowNumber  Int?
   sourceEnteredBy  String?
   sourceCapturedAt DateTime        @db.Timestamptz(3)
+  /// CSV imports only (M9-05): hash of the source and the row's reference or
+  /// fingerprint. Unique per workspace, so re-importing a file creates nothing.
+  importKey        String?
   /// First calendar day covered, inclusive.
   periodStart      DateTime        @db.Date
   /// Last calendar day covered, inclusive.
@@ -1316,6 +1437,7 @@ model CostEntry {
   workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   allocations CostAllocation[]
 
+  @@unique([workspaceId, importKey])
   @@index([workspaceId, periodStart])
   @@index([workspaceId, status])
   @@index([workspaceId, projectId])
@@ -1329,27 +1451,88 @@ model CostEntry {
 /// This is a child table: it carries no `workspaceId` and is reached only through
 /// its entry, which is workspace-scoped (M7-04). A finalized entry locks every write.
 model CostAllocation {
-  id            String   @id @default(cuid())
-  entryId       String
-  amount        Decimal  @db.Decimal(18, 2)
-  projectId     String?
-  clientId      String?
-  repository    String?
-  developerId   String?
-  agentId       String?
-  issueId       String?
-  pullRequestId String?
-  environment   String?
-  tags          String[] @default([])
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  id              String   @id @default(cuid())
+  entryId         String
+  amount          Decimal  @db.Decimal(18, 2)
+  projectId       String?
+  clientId        String?
+  repository      String?
+  developerId     String?
+  agentId         String?
+  issueId         String?
+  pullRequestId   String?
+  environment     String?
+  tags            String[] @default([])
+  /// The policy version that produced this split; null for a hand-entered allocation.
+  policyVersionId String?
+  /// The weight the policy read for this target (seats, usage, revenue, percent or amount).
+  policyMeasure   Decimal? @db.Decimal(30, 10)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
 
-  entry CostEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  entry         CostEntry                @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  policyVersion AllocationPolicyVersion? @relation(fields: [policyVersionId], references: [id], onDelete: NoAction)
 
   @@index([entryId])
+  @@index([policyVersionId])
   @@index([projectId])
   @@index([clientId])
   @@index([repository])
+}
+
+/// A reusable CSV column mapping, one per source and workspace (M9-05). Holds column
+/// headers and import settings only: never file content, amounts or secrets.
+model CostImportMapping {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  /// Free name of the source, for example `OpenAI factures`.
+  source          String
+  delimiter       String
+  hasHeader       Boolean  @default(true)
+  /// Canonical field → header name (see `src/modules/ai-costs/import.ts`).
+  columns         Json
+  /// Used when the file has no currency column.
+  defaultCurrency String?  @db.Char(3)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, source])
+}
+
+/// A named, workspace-scoped way to split costs (M9-03). Never deleted: archiving
+/// hides it from new applications while its versions keep explaining past splits.
+model AllocationPolicy {
+  id          String               @id @default(cuid())
+  workspaceId String
+  name        String
+  kind        AllocationPolicyKind
+  archivedAt  DateTime?            @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  AllocationPolicyVersion[]
+
+  @@unique([workspaceId, name])
+}
+
+/// An immutable snapshot of a policy's targets. Editing a policy inserts a new version;
+/// allocations keep pointing at the version that produced them.
+model AllocationPolicyVersion {
+  id        String   @id @default(cuid())
+  policyId  String
+  version   Int
+  rationale String
+  /// Validated target list: `[{ dimensions, percent? }]` (see `policy.ts`).
+  targets   Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  policy      AllocationPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  allocations CostAllocation[]
+
+  @@unique([policyId, version])
 }
 
 /// One security-relevant or data-changing action, kept for the owner's own review.
@@ -1420,4 +1603,44 @@ model ExchangeRateSnapshot {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, baseCurrency, quoteCurrency, rateDate], map: "ExchangeRateSnapshot_workspace_pair_rateDate_idx")
+}
+
+/// An agent configuration tracked by the workspace (M13-01). The platform never runs
+/// it. Name and status live here; everything that changes behaviour lives in versions.
+model Agent {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  status      AgentStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  AgentVersion[]
+
+  @@unique([workspaceId, name])
+}
+
+/// An immutable configuration snapshot. Insert-only: runs (M13-02) reference the
+/// exact version that produced them. `fingerprint` is the SHA-256 of the canonical
+/// configuration (see `src/modules/agents/config.ts`).
+model AgentVersion {
+  id               String   @id @default(cuid())
+  agentId          String
+  version          Int
+  /// `{ primary: { provider, model }, fallbacks: [{ provider, model }] }`.
+  modelPolicy      Json
+  tools            String[]
+  /// A workspace member's user id, checked at write time. No foreign key, so a
+  /// version stays readable after the member leaves.
+  ownerId          String
+  /// `owner/repository` names: access metadata, never credentials.
+  repositoryScopes String[]
+  fingerprint      String   @db.Char(64)
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+  @@index([agentId, fingerprint])
 }

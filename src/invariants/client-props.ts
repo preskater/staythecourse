@@ -45,6 +45,8 @@ export type ModuleIsPlain<M> = true extends {
 export type ClientModules = {
   "src/app/(app)/account/change-password-form.tsx": typeof import("@/app/(app)/account/change-password-form");
   "src/app/(app)/account/session-buttons.tsx": typeof import("@/app/(app)/account/session-buttons");
+  "src/app/(app)/ai-costs/import/cost-csv-importer.tsx": typeof import("@/app/(app)/ai-costs/import/cost-csv-importer");
+  "src/app/(app)/ai-costs/inbox/inbox-table.tsx": typeof import("@/app/(app)/ai-costs/inbox/inbox-table");
   "src/app/(app)/alerts/dismiss-alert-button.tsx": typeof import("@/app/(app)/alerts/dismiss-alert-button");
   "src/app/(app)/alerts/refresh-alerts-button.tsx": typeof import("@/app/(app)/alerts/refresh-alerts-button");
   "src/app/(app)/alerts/rules-form.tsx": typeof import("@/app/(app)/alerts/rules-form");
@@ -78,6 +80,10 @@ export type ClientModules = {
   "src/app/(app)/micro-business/project-form.tsx": typeof import("@/app/(app)/micro-business/project-form");
   "src/app/(app)/micro-business/revenue/revenue-form.tsx": typeof import("@/app/(app)/micro-business/revenue/revenue-form");
   "src/app/(app)/micro-business/revenue/revenue-movement-form.tsx": typeof import("@/app/(app)/micro-business/revenue/revenue-movement-form");
+  "src/app/(app)/micro-business/rates/billing-rate-form.tsx": typeof import("@/app/(app)/micro-business/rates/billing-rate-form");
+  "src/app/(app)/micro-business/rates/internal-rate-form.tsx": typeof import("@/app/(app)/micro-business/rates/internal-rate-form");
+  "src/app/(app)/micro-business/expenses/delete-expense-button.tsx": typeof import("@/app/(app)/micro-business/expenses/delete-expense-button");
+  "src/app/(app)/micro-business/expenses/expense-form.tsx": typeof import("@/app/(app)/micro-business/expenses/expense-form");
   "src/app/(app)/modules/module-toggle.tsx": typeof import("@/app/(app)/modules/module-toggle");
   "src/app/(app)/real-estate/cashflow-form.tsx": typeof import("@/app/(app)/real-estate/cashflow-form");
   "src/app/(app)/real-estate/delete-event-button.tsx": typeof import("@/app/(app)/real-estate/delete-event-button");

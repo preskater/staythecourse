@@ -42,6 +42,7 @@ import {
   type CostEntryStatus,
   type CostEntryTotals,
 } from "./ledger";
+import type { OverviewEntryRow, OverviewSourceRow } from "./overview";
 import { costMoney } from "./money";
 import {
   createCostSource,
@@ -311,6 +312,7 @@ type CostAllocationRow = {
   pullRequestId: string | null;
   environment: string | null;
   tags: string[];
+  policyVersionId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -368,11 +370,12 @@ const COST_ALLOCATION_SELECT = {
   pullRequestId: true,
   environment: true,
   tags: true,
+  policyVersionId: true,
   createdAt: true,
   updatedAt: true,
 } as const;
 
-function toStatus(value: string): CostEntryStatus {
+export function toStatus(value: string): CostEntryStatus {
   if (value !== "DRAFT" && value !== "FINALIZED") {
     throw new Error("Unknown stored cost entry status.");
   }
@@ -481,6 +484,7 @@ function toCostAllocation(row: CostAllocationRow, currency: Currency): CostAlloc
     entryId: row.entryId,
     amount: costMoney(row.amount, currency),
     dimensions: fromCostDimensionColumns(row),
+    policyVersionId: row.policyVersionId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -548,7 +552,7 @@ function allocationOrderBy() {
   return [{ createdAt: "asc" as const }, { id: "asc" as const }];
 }
 
-async function findEntryMoney(
+export async function findEntryMoney(
   tx: Prisma.TransactionClient,
   workspaceId: string,
   entryId: string,
@@ -561,7 +565,7 @@ async function findEntryMoney(
   return (row as { id: string; amount: Decimal.Value; currency: string; status: string } | null);
 }
 
-async function lockEntry(
+export async function lockEntry(
   tx: Prisma.TransactionClient,
   workspaceId: string,
   entryId: string,
@@ -963,4 +967,237 @@ export async function deleteCostAllocation(
 
     return count === 1;
   });
+}
+
+/* CSV import (M9-05). */
+
+/** The import keys already stored in the workspace, among the given ones. */
+export async function findExistingImportKeys(
+  workspaceId: string,
+  keys: readonly string[],
+): Promise<Set<string>> {
+  if (keys.length === 0) {
+    return new Set();
+  }
+
+  const rows = (await getPrisma().costEntry.findMany({
+    where: { workspaceId, importKey: { in: [...keys] } },
+    select: { importKey: true },
+  })) as { importKey: string | null }[];
+
+  return new Set(rows.map((row) => row.importKey).filter((key): key is string => key !== null));
+}
+
+/**
+ * Inserts imported entries in one statement. The unique `(workspaceId, importKey)`
+ * index skips a row another import stored in the meantime; the returned keys say
+ * exactly which rows were created.
+ */
+export async function createImportedCostEntries(
+  workspaceId: string,
+  rows: readonly { input: CostEntryInput; importKey: string }[],
+): Promise<Set<string>> {
+  if (rows.length === 0) {
+    return new Set();
+  }
+
+  const data = rows.map((row) => ({
+    workspaceId,
+    ...entryData(validateCostEntryInput(row.input)),
+    importKey: row.importKey,
+  }));
+  const created = (await getPrisma().costEntry.createManyAndReturn({
+    data,
+    skipDuplicates: true,
+    select: { importKey: true },
+  })) as { importKey: string | null }[];
+
+  return new Set(created.map((row) => row.importKey).filter((key): key is string => key !== null));
+}
+
+export type CostImportMappingRecord = {
+  source: string;
+  delimiter: string;
+  hasHeader: boolean;
+  columns: Record<string, string>;
+  defaultCurrency: string | null;
+};
+
+export async function listCostImportMappings(
+  workspaceId: string,
+): Promise<CostImportMappingRecord[]> {
+  const rows = (await getPrisma().costImportMapping.findMany({
+    where: { workspaceId },
+    orderBy: { source: "asc" },
+    select: { source: true, delimiter: true, hasHeader: true, columns: true, defaultCurrency: true },
+  })) as (Omit<CostImportMappingRecord, "columns"> & { columns: unknown })[];
+
+  return rows.map((row) => ({
+    ...row,
+    columns:
+      typeof row.columns === "object" && row.columns !== null && !Array.isArray(row.columns)
+        ? (row.columns as Record<string, string>)
+        : {},
+  }));
+}
+
+/** Creates or replaces the mapping of one source; `source` is the natural key. */
+export async function saveCostImportMapping(
+  workspaceId: string,
+  mapping: CostImportMappingRecord,
+): Promise<void> {
+  const data = {
+    delimiter: mapping.delimiter,
+    hasHeader: mapping.hasHeader,
+    columns: mapping.columns,
+    defaultCurrency: mapping.defaultCurrency,
+  };
+
+  await getPrisma().costImportMapping.upsert({
+    where: { workspaceId_source: { workspaceId, source: mapping.source } },
+    create: { workspaceId, source: mapping.source, ...data },
+    update: data,
+  });
+}
+
+/**
+ * What the AI cost overview (M12-01) reads, workspace-scoped.
+ *
+ * `entries` are the entries whose period starts in `[start, end)`; an entry is
+ * counted in the cycle it starts in, so it never appears in two cycles. `sources`
+ * holds the latest capture of each source (kind + provider), over the whole ledger:
+ * freshness is about the source, not about this cycle.
+ *
+ * ponytail: entries are summed in memory; move to a SQL `SUM ... GROUP BY` if a
+ * cycle ever holds more than a few thousand entries.
+ */
+export async function readAiCostOverviewLedger(
+  workspaceId: string,
+  start: Date,
+  end: Date,
+): Promise<{ entries: OverviewEntryRow[]; sources: OverviewSourceRow[] }> {
+  const prisma = getPrisma();
+  const [entries, sources] = await Promise.all([
+    prisma.costEntry.findMany({
+      where: { workspaceId, periodStart: { gte: start, lt: end } },
+      select: { amount: true, currency: true, actuality: true, periodEnd: true },
+    }),
+    prisma.costEntry.findMany({
+      where: { workspaceId },
+      distinct: ["sourceKind", "sourceProvider"],
+      orderBy: { sourceCapturedAt: "desc" },
+      select: { sourceKind: true, sourceProvider: true, sourceCapturedAt: true },
+    }),
+  ]);
+
+  return {
+    entries: entries as OverviewEntryRow[],
+    sources: sources as OverviewSourceRow[],
+  };
+}
+
+/* Unallocated-cost inbox (M9-06). */
+
+export const INBOX_PAGE_SIZE = 200;
+
+export type InboxEntry = {
+  readonly entry: CostEntry;
+  readonly totals: CostEntryTotals;
+};
+
+/**
+ * Draft entries, newest period first, with their allocated and unallocated split.
+ * Finalized entries are history: they never come back into the inbox. `truncated`
+ * says the bound cut the list, so the page never presents a prefix as everything.
+ */
+export async function listInboxEntries(
+  workspaceId: string,
+  options: { take?: number } = {},
+): Promise<{ entries: InboxEntry[]; truncated: boolean }> {
+  const take = Math.min(Math.max(1, options.take ?? INBOX_PAGE_SIZE), INBOX_PAGE_SIZE);
+  const rows = (await getPrisma().costEntry.findMany({
+    where: { workspaceId, status: "DRAFT" },
+    orderBy: [{ periodStart: "desc" }, { createdAt: "desc" }, { id: "asc" }],
+    take: take + 1,
+    select: { ...COST_ENTRY_SELECT, allocations: { select: COST_ALLOCATION_SELECT } },
+  })) as (CostEntryRow & { allocations: CostAllocationRow[] })[];
+
+  const entries = rows.slice(0, take).map((row) => {
+    const entry = toCostEntry(row);
+    const allocations = row.allocations.map((allocation) =>
+      toCostAllocation(allocation, entry.amount.currency),
+    );
+    return { entry, totals: totalsOf(entry, allocations) };
+  });
+
+  return { entries, truncated: rows.length > take };
+}
+
+export type UnallocatedSummary = {
+  readonly currency: Currency;
+  readonly total: Decimal;
+  readonly allocated: Decimal;
+  /** `total - allocated`, finalized entries included: what no dimension carries yet. */
+  readonly unallocated: Decimal;
+  readonly draftCount: number;
+  readonly entryCount: number;
+};
+
+/**
+ * Workspace-wide totals per currency, aggregated in the database rather than summed
+ * from a bounded page. Currencies are never added together.
+ */
+export async function summarizeUnallocatedCosts(
+  workspaceId: string,
+): Promise<UnallocatedSummary[]> {
+  const prisma = getPrisma();
+  const groups = await prisma.costEntry.groupBy({
+    by: ["currency", "status"],
+    where: { workspaceId },
+    orderBy: [{ currency: "asc" }, { status: "asc" }],
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
+  const entryGroups = groups as unknown as {
+    currency: string;
+    status: string;
+    _sum: { amount: Decimal.Value | null };
+    _count: { _all: number };
+  }[];
+
+  const allocatedRows = await prisma.$queryRaw<{ currency: string; allocated: Decimal.Value }[]>`
+    SELECT e."currency" AS "currency", COALESCE(SUM(a."amount"), 0) AS "allocated"
+    FROM "CostAllocation" a
+    JOIN "CostEntry" e ON e."id" = a."entryId"
+    WHERE e."workspaceId" = ${workspaceId}
+    GROUP BY e."currency"`;
+
+  const allocatedByCurrency = new Map(
+    allocatedRows.map((row) => [row.currency.trim(), new Decimal(row.allocated.toString())]),
+  );
+  const byCurrency = new Map<string, { total: Decimal; draftCount: number; entryCount: number }>();
+
+  for (const group of entryGroups) {
+    const currency = group.currency.trim();
+    const current = byCurrency.get(currency) ?? { total: new Decimal(0), draftCount: 0, entryCount: 0 };
+    byCurrency.set(currency, {
+      total: current.total.plus(new Decimal((group._sum.amount ?? 0).toString())),
+      draftCount: current.draftCount + (group.status === "DRAFT" ? group._count._all : 0),
+      entryCount: current.entryCount + group._count._all,
+    });
+  }
+
+  return [...byCurrency.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, { total, draftCount, entryCount }]) => {
+      const allocated = allocatedByCurrency.get(currency) ?? new Decimal(0);
+      return {
+        currency: costMoney(total, currency).currency,
+        total,
+        allocated,
+        unallocated: total.minus(allocated),
+        draftCount,
+        entryCount,
+      };
+    });
 }

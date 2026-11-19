@@ -105,6 +105,16 @@ docs/                architecture/overview.md, decisions/
   `RevenueWriteOff` attach positive, dated rows to an invoice. `statementOf` derives
   net issued, paid, outstanding, overdue days and a status on every read; no status
   column exists. Overpayment is refused; a credit note never exceeds the balance.
+- `BillingRate` (unique per client + year + month) and `InternalCostRate` (unique per
+  workspace + year + month) are effective-dated change points. `resolveEffectiveRate`
+  is pure and returns `null` before the first point; saving an existing month upserts.
+  The two are never merged, and internal rows are read only with
+  `read-internal-rates` (owner preset).
+- `BusinessExpense` stores a recurring business definition only (positive amount,
+  currency, `RecurrenceFrequency`, start/end dates, kind). No occurrence table exists:
+  `upcomingBusinessExpenses` computes the renewals on read with the budget's cadence and
+  clamping rules, so recomputation is duplicate-free. Every amount is a planning
+  estimate, never a payment or tax advice.
 - `ProjectSnapshot` / `IssueSnapshot` / `MilestoneSnapshot` are keyed by
   `(connectionId, externalId)` — that is what makes a sync re-runnable.
 
@@ -120,7 +130,8 @@ docs/                architecture/overview.md, decisions/
 | `npm test` | Vitest, one run (`npm run test:watch` to keep it running). No database, no network: adapters get an injected fake `fetch`. |
 | `npm run build` | Production build. It type-checks test files too. |
 | `npm run db:migrate` / `npm run db:deploy` | Create + apply a migration (dev) / apply pending migrations (deploy, CI). |
-| `npm run db:seed` | Creates the single owner from `SEED_OWNER_*`; idempotent. |
+| `npm run db:seed` | Creates the single owner, their personal workspace and initial modules from `SEED_*`; idempotent. |
+| `npm run db:verify-seed` | Checks the seed output (one owner, one `OWNER` workspace, selected modules) on a fresh/throwaway database. |
 | `npm run db:studio` | Prisma Studio. |
 
 Local flow: `npm install`, `npm run db:generate`, copy `.env.example` to `.env`,
@@ -136,6 +147,9 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
 - Required server-side: `DATABASE_URL`, `AUTH_SECRET` (32+ characters),
   `INTEGRATION_ENCRYPTION_KEY` (32 bytes, base64, protects provider tokens),
   `SEED_OWNER_EMAIL` / `SEED_OWNER_PASSWORD`.
+- `SEED_WORKSPACE_MODULES` lists the module keys enabled in the personal workspace on
+  first seed (`budget,real-estate,development` when unset). The seed only adds missing
+  rows, so it never re-enables a module the owner disabled.
 - The browsed origin is three coupled variables that must agree: `AUTH_URL` (what
   the app is told), `APP_HOST` (what the proxy answers for) and `PROXY_PORT` (the
   published host port). Default: `http://dashboard.localhost:8888`.
@@ -248,6 +262,17 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
   starts the day after the due date in the owner's time zone. Recognition is a frozen
   `recognizedOn` + `recognizedAmount` snapshot (rules arrive with M15-01). The monthly
   summary omits a month without data rather than showing zeros.
+- Rate cards (`/micro-business/rates`): effective-dated client billing rates and
+  confidential internal loaded-cost rates, as separate change points (most recent at or
+  before the month; none before the first). Saving a month corrects its point; nothing
+  is deleted and no stored amount is recomputed. Internal rates need
+  `read-internal-rates` (owner only until M18-01); without it the rows are never queried.
+- Recurring business expenses (`/micro-business/expenses`): definitions with a kind
+  (`EXPENSE`, `OBLIGATION`, `RESERVE`), positive amount, currency, cadence and
+  start/end dates. Occurrences are computed on read with the budget's day-of-month and
+  cadence rules (clamped day, cadence from the start month, inclusive end) — no row is
+  materialised, so no duplicate can be created. Amounts are planning estimates only; no
+  payment, budget entry or tax advice.
 - AI costs (`src/modules/ai-costs`): canonical `CostEntry` (signed exact amount,
   currency, mandatory actuality, immutable source reference, inclusive period, optional
   dimensions) and `CostAllocation` splits across project/client/repository/developer/
@@ -284,9 +309,9 @@ http://dashboard.localhost:8888 (the proxy belongs to the `full` profile).
 ## Not implemented (do not assume they exist)
 
 - No scheduler/cron for sync — the function exists, only the manual trigger ships.
-- The `micro-business` module has clients, projects and revenue documents only: no rate
-  card, estimate/version, recurring business expense or business-to-personal transfer
-  yet (M10-03 and later). Revenue records cannot be edited or deleted: a credit note,
+- The `micro-business` module has clients, projects, revenue documents, rate cards and
+  recurring business expenses: no estimate/version or business-to-personal transfer yet
+  (M10-04 and later). Revenue records cannot be edited or deleted: a credit note,
   refund or write-off is the explicit correction path.
 - Properties and cashflow entries cannot be edited or deleted from the interface yet.
   Loans (financing), accounts (rename/retype/archive/restore), categories
