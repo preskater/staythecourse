@@ -34,7 +34,7 @@ const NOT_FOUND =
   "Prêt introuvable : il a peut-être été archivé ou supprimé entre-temps.";
 
 function refreshLoans(): void {
-  revalidatePath("/budget/loans");
+  revalidatePath("/budget");
 }
 
 export async function createLoanAction(values: unknown): Promise<ActionResult> {

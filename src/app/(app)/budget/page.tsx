@@ -14,6 +14,7 @@ import { BudgetTabs, resolveBudgetTab, type BudgetTab } from "./budget-tabs";
 import { BudgetsSection } from "./budgets-section";
 import { ForecastSection } from "./forecast-section";
 import { GoalsSection } from "./goals-section";
+import { LoansSection } from "./loans/loans-section";
 import { OperationsSection } from "./operations-section";
 import { ReportSection } from "./report-section";
 import { SalarySection } from "./salary-section";
@@ -71,6 +72,7 @@ export default async function BudgetPage({
   const editBudgetId = readSearchParam(params, "editBudget");
   const editGoalId = readSearchParam(params, "editGoal");
   const editRecurringId = readSearchParam(params, "editRecurring");
+  const editLoanId = readSearchParam(params, "editLoan");
   // The rolling-average suggestion flow: open the budget form pre-filled from a link.
   const newBudgetCategory = readSearchParam(params, "newBudgetCategory");
   const newBudgetCurrency = readSearchParam(params, "newBudgetCurrency");
@@ -83,7 +85,12 @@ export default async function BudgetPage({
   const page = Number.isInteger(rawPage) && rawPage >= 1 ? rawPage : 1;
   const scopeAll = readSearchParam(params, "all") === "1";
 
-  const tab = resolveBudgetTab(readSearchParam(params, "tab"), { editBudgetId, editGoalId, editRecurringId });
+  const tab = resolveBudgetTab(readSearchParam(params, "tab"), {
+    editBudgetId,
+    editGoalId,
+    editRecurringId,
+    editLoanId,
+  });
 
   // Month and filters travel from tab to tab (and to the CSV export), so switching a
   // section never silently changes what is displayed. Edition identifiers are left out:
@@ -108,6 +115,8 @@ export default async function BudgetPage({
     report: `Suivi du budget de ${monthLabel} : prévu, réalisé et reste par catégorie et par devise, sans conversion.`,
     forecast: `Prévisions de ${monthLabel} : échéances attendues des séries récurrentes, salaire simulé du mois et échéancier des six mois suivants — salaire compris, avec solde simulé de fin de mois — à confirmer. Rien ne compte dans un total réel avant d'être enregistré.`,
     goals: "Objectifs d'épargne ou de remboursement : progression, contributions datées, reste à atteindre et seuil de coussin de sécurité. Un solde inconnu ne vaut jamais zéro, et aucune devise n'est convertie.",
+    loans:
+      "Prêts de l'espace : capital, taux, durée, assurance et relevé de solde manuel. Les valeurs inconnues restent « non renseignées », jamais à zéro ; aucune devise n'est convertie et le coût mensuel affiché est celui de l'assurance uniquement.",
     salary: `Salaire simulé de ${monthLabel} : un taux horaire propre au mois (effectif à partir du mois saisi, jusqu'au prochain taux), un calendrier de jours prévus puis travaillés, et la recette du mois en un clic.`,
     accounts: "Comptes et catégories : soldes enregistrés, solde projeté de fin de mois (échéances en attente comprises), renommage, archivage, fusion et suppression. Tout ce qui est utilisé est dit avant d'être modifié.",
   };
@@ -136,12 +145,6 @@ export default async function BudgetPage({
         description={descriptions[tab]}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link
-              href="/budget/loans"
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            >
-              Prêts
-            </Link>
             <ExpenseSimulationModal
               accounts={accounts}
               categories={expenseCategories}
@@ -227,6 +230,14 @@ export default async function BudgetPage({
           <SavingsThresholdCard workspaceId={user.workspace.id} />
           <GoalsSection workspaceId={user.workspace.id} editGoalId={editGoalId} />
         </>
+      ) : null}
+
+      {tab === "loans" ? (
+        <LoansSection
+          workspaceId={user.workspace.id}
+          canLinkProperty={hasModule(user.workspace, "real-estate")}
+          editLoanId={editLoanId}
+        />
       ) : null}
 
       {tab === "salary" ? <SalarySection workspaceId={user.workspace.id} monthKey={monthKey} /> : null}

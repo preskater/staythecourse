@@ -86,7 +86,7 @@ Working today:
   negatives), duplicates are skipped on request, and only the normalised rows reach a
   Server Action that validates everything again — nothing is uploaded before the
   preview, and nothing is sent to a third party.
-  A **Prêts** page (`/budget/loans`) registers mortgages, vehicle, consumer, student and
+  A **Prêts** tab (`/budget?tab=loans`) registers mortgages, vehicle, consumer, student and
   business loans: purpose, optional lender, principal, optional rate, term, deferral and
   an explicit insurance mode, plus a dated manual balance snapshot. A missing rate, term,
   insurance or balance reads « non renseigné », never zero; amounts stay exact in one

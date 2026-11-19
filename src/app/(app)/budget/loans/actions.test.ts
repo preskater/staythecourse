@@ -131,6 +131,7 @@ describe("createLoanAction", () => {
       insuranceMode: "FIXED_MONTHLY",
     });
     expect(JSON.stringify(audit.metadata)).not.toMatch(/25000|Banque|Prêt auto/);
+    expect(revalidatePathMock).toHaveBeenCalledWith("/budget");
   });
 
   it("refuses an invalid payload before any lookup or write", async () => {

@@ -26,7 +26,7 @@ read-only; personal and company data are not mixed.
 
 ```text
 src/
-  app/(app)/         authenticated pages: account, alerts, budget (incl. /budget/import and /budget/loans), dashboard, integrations, micro-business, real-estate
+  app/(app)/         authenticated pages: account, alerts, budget (incl. /budget/import and the Prêts tab), dashboard, integrations, micro-business, real-estate
   app/api/           Route Handlers: auth callbacks + CSV export (401 JSON, never a redirect)
   app/login/         sign-in page
   components/        shared UI (forms, server-rendered SVG charts, navigation)

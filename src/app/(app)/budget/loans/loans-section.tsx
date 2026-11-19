@@ -5,17 +5,12 @@ import {
   Card,
   EmptyState,
   Notice,
-  PageHeader,
   TableShell,
   tdClass,
   thClass,
 } from "@/components/ui";
-import { ModuleDisabled } from "@/components/module-disabled";
-import { requireUser } from "@/lib/auth/guard";
 import { formatDateOnly } from "@/lib/dates";
 import { DEFAULT_CURRENCY, formatMoney, type Currency } from "@/lib/money";
-import { readSearchParam, type SearchParamsInput } from "@/lib/search-params";
-import { hasModule } from "@/modules/catalog/catalog";
 import {
   LOAN_INSURANCE_MODE_LABELS,
   LOAN_PURPOSE_LABELS,
@@ -28,8 +23,6 @@ import { listLoanGroups } from "@/modules/loans/service";
 import { listPropertyOptions } from "@/modules/real-estate/repository";
 import { LoanArchiveButton } from "./loan-archive-button";
 import { LoanForm } from "./loan-form";
-
-export const dynamic = "force-dynamic";
 
 const RATE_FORMAT = new Intl.NumberFormat("fr-FR", {
   minimumFractionDigits: 0,
@@ -77,31 +70,30 @@ function monthlyCostLabel(loan: LoanSummary): string {
 }
 
 /**
- * « Prêts » — the workspace loan registry (M21-01).
+ * « Prêts » — the workspace loan registry (M21-01), rendered as a budget tab.
  *
- * Every loan is grouped by currency and never added to another currency's figures.
- * The monthly cost shown is the insurance cost only: no amortisation schedule and no
- * simulated instalment is computed here (M21-02 owns that).
+ * The parent page has already checked the session, the budget entitlement and the
+ * role permission; this section reads only the session's workspace and never trusts
+ * an identifier coming from the URL. Every loan is grouped by currency and never
+ * added to another currency's figures. The monthly cost shown is the insurance cost
+ * only: no amortisation schedule and no simulated instalment is computed here
+ * (M21-02 owns that).
  */
-export default async function LoansPage({
-  searchParams,
+export async function LoansSection({
+  workspaceId,
+  canLinkProperty,
+  editLoanId,
 }: {
-  searchParams: Promise<SearchParamsInput>;
+  workspaceId: string;
+  /** Real-estate entitlement, resolved by the page from the session's workspace. */
+  canLinkProperty: boolean;
+  /** `?editLoan=` — an identifier to look up, never an authorisation. */
+  editLoanId?: string | null;
 }) {
-  const user = await requireUser();
-
-  if (!hasModule(user.workspace, "budget")) {
-    return <ModuleDisabled moduleKey="budget" workspace={user.workspace} />;
-  }
-
-  const params = await searchParams;
-  const editId = readSearchParam(params, "edit");
-  const canLinkProperty = hasModule(user.workspace, "real-estate");
-
   const [groups, properties, editingLoan] = await Promise.all([
-    listLoanGroups(user.workspace.id),
-    canLinkProperty ? listPropertyOptions(user.workspace.id) : Promise.resolve([]),
-    editId ? findLoan(user.workspace.id, editId) : Promise.resolve(null),
+    listLoanGroups(workspaceId),
+    canLinkProperty ? listPropertyOptions(workspaceId) : Promise.resolve([]),
+    editLoanId ? findLoan(workspaceId, editLoanId) : Promise.resolve(null),
   ]);
 
   const defaultCurrency = groups[0]?.currency ?? DEFAULT_CURRENCY;
@@ -111,27 +103,22 @@ export default async function LoansPage({
 
   return (
     <>
-      <PageHeader
-        title="Prêts"
-        description="Crédits immobiliers, automobiles, à la consommation, étudiants ou professionnels. Chaque prêt reste dans sa devise : les montants ne sont jamais convertis ni additionnés entre devises. Le coût mensuel affiché est celui de l'assurance uniquement — aucun échéancier n'est calculé ici."
-        actions={
-          editingLoan ? (
-            <Link
-              href="/budget/loans"
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            >
-              Annuler la modification
-            </Link>
-          ) : null
-        }
-      />
-
       <Card
         title={editingLoan ? `Modifier « ${editingLoan.label} »` : "Nouveau prêt"}
         description={
           editingLoan
             ? "Les champs laissés vides restent « non renseignés ». Archiver un prêt le retire des formulaires de sélection sans effacer son historique."
             : "Un taux, une durée, une assurance ou un solde inconnus restent vides : ils sont enregistrés « non renseignés », jamais à zéro."
+        }
+        actions={
+          editingLoan ? (
+            <Link
+              href="/budget?tab=loans"
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Annuler la modification
+            </Link>
+          ) : null
         }
       >
         <LoanForm
@@ -233,18 +220,14 @@ export default async function LoansPage({
                     </td>
                     <td className={`${tdClass} tabular-nums`}>{formatRate(loan.annualRate)}</td>
                     <td className={tdClass}>
-                      {loan.termMonths === null
-                        ? "non renseigné"
-                        : `${loan.termMonths} mois`}
+                      {loan.termMonths === null ? "non renseigné" : `${loan.termMonths} mois`}
                       {loan.interestOnlyMonths > 0 ? (
                         <span className="block text-xs text-zinc-500 dark:text-zinc-400">
                           dont {loan.interestOnlyMonths} mois de différé
                         </span>
                       ) : null}
                     </td>
-                    <td className={tdClass}>
-                      {insuranceLabel(loan)}
-                    </td>
+                    <td className={tdClass}>{insuranceLabel(loan)}</td>
                     <td className={`${tdClass} tabular-nums`}>{monthlyCostLabel(loan)}</td>
                     <td className={`${tdClass} tabular-nums`}>
                       {formatAmount(loan.outstandingBalance, loan.currency)}
@@ -264,7 +247,7 @@ export default async function LoansPage({
                     <td className={tdClass}>
                       <span className="flex flex-col items-start gap-1">
                         <Link
-                          href={`/budget/loans?edit=${encodeURIComponent(loan.id)}`}
+                          href={`/budget?tab=loans&editLoan=${encodeURIComponent(loan.id)}`}
                           className="rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
                         >
                           Modifier
