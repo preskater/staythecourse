@@ -48,6 +48,11 @@ type Listing = "listUsage" | "listCosts";
 export function describeAiAdapterContract(harness: AiContractHarness): void {
   const { adapter, token, instanceUrl, transports } = harness;
 
+  // An adapter without `listUsage` does not import usage: only its costs are checked.
+  const listings: Listing[] = adapter.listUsage ? ["listUsage", "listCosts"] : ["listCosts"];
+  const list = (listing: Listing, request: AiPageRequest): Promise<AiPageOutcome<{ externalId: string }>> =>
+    listing === "listCosts" ? adapter.listCosts(request) : adapter.listUsage!(request);
+
   const page = (fetchImpl: typeof fetch, extra: Partial<AiPageRequest> = {}): AiPageRequest => ({
     token,
     instanceUrl,
@@ -74,7 +79,7 @@ export function describeAiAdapterContract(harness: AiContractHarness): void {
     let cursor: string | null = null;
 
     for (let run = 0; run < 50; run += 1) {
-      const outcome: AiPageOutcome<{ externalId: string }> = await adapter[listing](
+      const outcome: AiPageOutcome<{ externalId: string }> = await list(listing, 
         page(fetchImpl, { cursor, maxPages: 1 }),
       );
       ids.push(...outcome.records.map((record) => record.externalId));
@@ -114,11 +119,11 @@ export function describeAiAdapterContract(harness: AiContractHarness): void {
       discovery.scopes.forEach((scope) => assertAiScope(scope));
     });
 
-    describe.each<Listing>(["listUsage", "listCosts"])("%s", (listing) => {
+    describe.each<Listing>(listings)("%s", (listing) => {
       const assertRecord = listing === "listUsage" ? assertUsageRecord : assertCostRecord;
 
       it("reads every page into valid, unique records", async () => {
-        const outcome = await adapter[listing](page(transports.healthy()));
+        const outcome = await list(listing, page(transports.healthy()));
         expect(outcome.stoppedBy).toBeNull();
         expect(outcome.nextCursor).toBeNull();
         expect(outcome.pagesRead).toBeGreaterThanOrEqual(2);
@@ -130,9 +135,9 @@ export function describeAiAdapterContract(harness: AiContractHarness): void {
 
       it("stops at maxPages with a cursor that resumes without gap or duplicate", async () => {
         const fetchImpl = transports.healthy();
-        const full = await adapter[listing](page(fetchImpl));
+        const full = await list(listing, page(fetchImpl));
 
-        const first = await adapter[listing](page(fetchImpl, { maxPages: 1 }));
+        const first = await list(listing, page(fetchImpl, { maxPages: 1 }));
         expect(first.stoppedBy).toBe("MAX_PAGES");
         expect(first.nextCursor).not.toBeNull();
         expect(first.nextCursor).not.toContain(token);
@@ -143,43 +148,43 @@ export function describeAiAdapterContract(harness: AiContractHarness): void {
 
       it("is re-runnable: the same cursor returns the same records", async () => {
         const fetchImpl = transports.healthy();
-        const once = await adapter[listing](page(fetchImpl));
-        const twice = await adapter[listing](page(fetchImpl));
+        const once = await list(listing, page(fetchImpl));
+        const twice = await list(listing, page(fetchImpl));
         expect(twice.records.map((r) => r.externalId)).toEqual(
           once.records.map((r) => r.externalId),
         );
       });
 
       it("throws UNAUTHORIZED on a revoked credential", async () => {
-        const error = await caught(adapter[listing](page(transports.revoked())));
+        const error = await caught(list(listing, page(transports.revoked())));
         expect(error.code).toBe("UNAUTHORIZED");
       });
 
       it("throws RATE_LIMITED with the stated wait when the first page is refused", async () => {
-        const error = await caught(adapter[listing](page(transports.rateLimited())));
+        const error = await caught(list(listing, page(transports.rateLimited())));
         expect(error.code).toBe("RATE_LIMITED");
         expect(error.details.retryAfterSeconds).toBe(30);
       });
 
       it("returns a resumable partial outcome when a later page is rate limited", async () => {
-        const outcome = await adapter[listing](page(transports.rateLimitedAfterFirstPage()));
+        const outcome = await list(listing, page(transports.rateLimitedAfterFirstPage()));
         expect(outcome.stoppedBy).toBe("RATE_LIMITED");
         expect(outcome.retryAfterSeconds).toBe(30);
         expect(outcome.pagesRead).toBe(1);
         expect(outcome.records.length).toBeGreaterThan(0);
         expect(outcome.nextCursor).not.toBeNull();
 
-        const rest = await adapter[listing](
+        const rest = await list(listing, 
           page(transports.healthy(), { cursor: outcome.nextCursor }),
         );
-        const full = await adapter[listing](page(transports.healthy()));
+        const full = await list(listing, page(transports.healthy()));
         expect([...outcome.records, ...rest.records].map((r) => r.externalId)).toEqual(
           full.records.map((r) => r.externalId),
         );
       });
 
       it("throws INVALID_RESPONSE on a malformed payload", async () => {
-        const error = await caught(adapter[listing](page(transports.malformed())));
+        const error = await caught(list(listing, page(transports.malformed())));
         expect(error.code).toBe("INVALID_RESPONSE");
       });
     });

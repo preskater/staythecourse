@@ -110,6 +110,7 @@ function fakeAdapter(provider: AiProvider = "OPENAI", publicBase: string | null 
           periodEnd: new Date(row.end as string),
           amount: row.amount as string,
           currency: row.currency as string,
+          dimensions: {},
         }),
         assertCostRecord,
       ),
@@ -301,6 +302,7 @@ describe("record validation", () => {
     periodEnd: usage.periodEnd,
     amount: "-0.50",
     currency: "EUR",
+    dimensions: {},
   };
 
   it("accepts credits and unknown request counts", () => {
@@ -332,7 +334,7 @@ describe("retry convention", () => {
     }) as typeof fetch;
     const retrying = createRetryingFetch({ fetchImpl: flaky, sleep: async () => {} });
 
-    const outcome = await fakeAdapter().listUsage({
+    const outcome = await fakeAdapter().listUsage!({
       token: TOKEN,
       instanceUrl: "",
       fetchImpl: retrying.fetchImpl,
