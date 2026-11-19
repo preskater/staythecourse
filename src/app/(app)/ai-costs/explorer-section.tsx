@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import {
   Card,
+  ChevronDown,
   EmptyState,
   Field,
   inputClass,
@@ -22,6 +24,21 @@ import {
   type ExplorerOptions,
 } from "@/modules/ai-costs/explorer";
 import { readCostExplorer } from "@/modules/ai-costs/repository";
+
+/**
+ * A select with its own chevron: the native arrow sits flush against the border, so it
+ * is hidden (`appearance-none`) and redrawn inside the padding.
+ */
+function Select({ id, name, defaultValue, children }: { id: string; name: string; defaultValue: string; children: ReactNode }) {
+  return (
+    <div className="relative">
+      <select id={id} name={name} defaultValue={defaultValue} className={`${inputClass} appearance-none pr-8`}>
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500 dark:text-zinc-400" />
+    </div>
+  );
+}
 
 /**
  * « Explorer » tab of the AI costs page (M12-02).
@@ -58,12 +75,7 @@ export async function ExplorerSection({
           <input type="hidden" name="tab" value="explorer" />
           {EXPLORER_DIMENSIONS.map(({ param, label }) => (
             <Field key={param} label={label} htmlFor={`explorer-${param}`}>
-              <select
-                id={`explorer-${param}`}
-                name={param}
-                defaultValue={filters.dimensions[param] ?? ""}
-                className={inputClass}
-              >
+              <Select id={`explorer-${param}`} name={param} defaultValue={filters.dimensions[param] ?? ""}>
                 <option value="">Tous</option>
                 <option value={FILTER_NONE}>Non renseigné</option>
                 {options[param].map((value) => (
@@ -71,7 +83,7 @@ export async function ExplorerSection({
                     {value}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
           ))}
           <Field label="Du" htmlFor="explorer-from">
@@ -93,21 +105,22 @@ export async function ExplorerSection({
             />
           </Field>
           <Field label="Regrouper par" htmlFor="explorer-by">
-            <select id="explorer-by" name="by" defaultValue={filters.groupBy} className={inputClass}>
+            <Select id="explorer-by" name="by" defaultValue={filters.groupBy}>
               {EXPLORER_DIMENSIONS.map(({ param, label }) => (
                 <option key={param} value={param}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
-          <div className="flex items-end gap-2">
+          {/* Fills the rest of the last row, so the actions sit at its right edge. */}
+          <div className="flex items-end justify-end gap-3 sm:col-span-2">
+            <Link href="/ai-costs?tab=explorer" className="py-1.5 text-sm underline">
+              Réinitialiser
+            </Link>
             <button type="submit" className={submitClass}>
               Appliquer
             </button>
-            <Link href="/ai-costs?tab=explorer" className="text-sm underline">
-              Réinitialiser
-            </Link>
           </div>
         </form>
 
