@@ -29,6 +29,7 @@ const PAGES: { path: string; moduleKey: ModuleKey; load: () => Promise<{ default
   { path: "/real-estate/[id]", moduleKey: "real-estate", load: () => import("./real-estate/[id]/page") },
   { path: "/micro-business", moduleKey: "micro-business", load: () => import("./micro-business/page") },
   { path: "/integrations", moduleKey: "development", load: () => import("./integrations/page") },
+  { path: "/ai-costs", moduleKey: "ai-costs", load: () => import("./ai-costs/page") },
 ];
 
 const props = {

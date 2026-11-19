@@ -25,6 +25,7 @@ const table = {
 const prisma = {
   account: table,
   exchangeRateSnapshot: table,
+  costEntry: table,
   property: table,
   propertyLoan: table,
   propertyValuation: { create: createValuationMock },
@@ -53,9 +54,8 @@ const {
 } = await import("./micro-business/repository");
 const { dismissAlert, listAlerts } = await import("./alerts/repository");
 const { findConnectionForSync, listIssues } = await import("./integrations/repository");
-const { findExchangeRateSnapshotById, recordExchangeRate } = await import(
-  "./ai-costs/repository"
-);
+const { findExchangeRateSnapshotById, readAiCostOverviewLedger, recordExchangeRate } =
+  await import("./ai-costs/repository");
 
 const FOREIGN = "ws-someone-else";
 
@@ -214,6 +214,14 @@ describe("integrations", () => {
 });
 
 describe("ai-costs", () => {
+  it("reads the overview from the given workspace only", async () => {
+    await readAiCostOverviewLedger("ws-1", new Date("2026-11-01"), new Date("2026-12-01"));
+    for (const call of findManyMock.mock.calls) {
+      expect((call[0] as { where: unknown }).where).toMatchObject({ workspaceId: "ws-1" });
+    }
+    expect(findManyMock).toHaveBeenCalledTimes(2);
+  });
+
   it("reads a foreign workspace's exchange rate as not found", async () => {
     expect(await findExchangeRateSnapshotById(FOREIGN, "rate-1")).toBeNull();
     expect(where(findFirstMock)).toEqual({ id: "rate-1", workspaceId: FOREIGN });

@@ -1,0 +1,209 @@
+import {
+  Badge,
+  Card,
+  EmptyState,
+  Notice,
+  PageHeader,
+  TableShell,
+  tdClass,
+  thClass,
+} from "@/components/ui";
+import { ModuleDisabled } from "@/components/module-disabled";
+import { requireUser } from "@/lib/auth/guard";
+import { todayDateOnly } from "@/lib/dates";
+import { publicEnv } from "@/lib/env";
+import { hasModule } from "@/modules/catalog/catalog";
+import {
+  buildAiCostOverview,
+  currentBillingCycle,
+  KPI_STATE_LABELS,
+  type KpiState,
+  type OverviewLedger,
+} from "@/modules/ai-costs/overview";
+import { readAiCostOverviewLedger } from "@/modules/ai-costs/repository";
+
+export const dynamic = "force-dynamic";
+
+const STATE_TONES: Record<KpiState, "neutral" | "positive" | "negative" | "warning"> = {
+  ok: "positive",
+  "no-data": "neutral",
+  "not-connected": "warning",
+  error: "negative",
+};
+
+function StateBadge({ state }: { state: KpiState }) {
+  return <Badge tone={STATE_TONES[state]}>{KPI_STATE_LABELS[state]}</Badge>;
+}
+
+/**
+ * « Coûts IA » — read-only overview of the current billing cycle (M12-01).
+ *
+ * Every member of the workspace reads it; nothing here writes. A KPI without a data
+ * source shows its state and its definition, never a zero.
+ */
+export default async function AiCostsPage() {
+  const user = await requireUser();
+
+  if (!hasModule(user.workspace, "ai-costs")) {
+    return <ModuleDisabled moduleKey="ai-costs" workspace={user.workspace} />;
+  }
+
+  const timeZone = publicEnv.NEXT_PUBLIC_DEFAULT_TIME_ZONE;
+  const cycle = currentBillingCycle(todayDateOnly(timeZone));
+
+  let ledger: OverviewLedger;
+  try {
+    ledger = {
+      state: "ok",
+      ...(await readAiCostOverviewLedger(user.workspace.id, cycle.start, cycle.end)),
+    };
+  } catch (error) {
+    // Name only: a database error message can quote amounts or identifiers.
+    console.error(`[ai-costs] ${error instanceof Error ? error.name : typeof error}`);
+    ledger = { state: "error" };
+  }
+
+  const overview = buildAiCostOverview(ledger, cycle, timeZone);
+
+  return (
+    <>
+      <PageHeader
+        title="Coûts IA"
+        description={`Cycle en cours : ${overview.cycleLabel}. Chaque indicateur indique sa formule, sa période et ses sources ; une donnée absente n'est jamais affichée comme un zéro.`}
+      />
+
+      {ledger.state === "error" ? (
+        <Notice tone="error">
+          Le registre des coûts n&apos;a pas pu être lu. Les indicateurs qui en dépendent
+          sont marqués en erreur.
+        </Notice>
+      ) : null}
+
+      <Card title="Indicateurs du cycle">
+        <TableShell caption="Indicateurs des coûts IA du cycle en cours">
+          <thead>
+            <tr>
+              <th scope="col" className={thClass}>
+                Indicateur
+              </th>
+              <th scope="col" className={thClass}>
+                Valeur
+              </th>
+              <th scope="col" className={thClass}>
+                Définition
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {overview.kpis.map((kpi) => (
+              <tr key={kpi.key}>
+                <th scope="row" className={`${tdClass} text-left font-medium`}>
+                  {kpi.label}
+                </th>
+                <td className={tdClass}>
+                  {kpi.value !== null ? (
+                    <span className="font-semibold tabular-nums">{kpi.value}</span>
+                  ) : (
+                    <StateBadge state={kpi.state} />
+                  )}
+                  {kpi.detail ? (
+                    <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                      {kpi.detail}
+                    </span>
+                  ) : null}
+                </td>
+                <td className={`${tdClass} text-xs text-zinc-600 dark:text-zinc-400`}>
+                  <span className="block">Formule : {kpi.formula}</span>
+                  <span className="block">Période : {kpi.period}</span>
+                  <span className="block">Sources : {kpi.sources}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </TableShell>
+      </Card>
+
+      <Card
+        title="Dépense par devise et fiabilité"
+        description="Montants non convertis. La fiabilité indique si le montant est constaté, calculé, réparti, estimé ou rapproché."
+      >
+        {overview.spendRows.length === 0 ? (
+          <EmptyState
+            title={ledger.state === "error" ? "Données indisponibles" : "Aucune dépense sur ce cycle"}
+            description={
+              ledger.state === "error"
+                ? "Le registre des coûts n'a pas pu être lu."
+                : "Aucune entrée de coût ne commence dans le cycle en cours."
+            }
+          />
+        ) : (
+          <TableShell caption="Dépense du cycle par devise et fiabilité">
+            <thead>
+              <tr>
+                <th scope="col" className={thClass}>
+                  Devise
+                </th>
+                <th scope="col" className={thClass}>
+                  Fiabilité
+                </th>
+                <th scope="col" className={`${thClass} text-right`}>
+                  Montant
+                </th>
+                <th scope="col" className={`${thClass} text-right`}>
+                  Entrées
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.spendRows.map((row) => (
+                <tr key={`${row.currency}-${row.actuality}`}>
+                  <td className={tdClass}>{row.currency}</td>
+                  <td className={tdClass}>{row.actuality}</td>
+                  <td className={`${tdClass} text-right tabular-nums`}>{row.amount}</td>
+                  <td className={`${tdClass} text-right tabular-nums`}>{row.entryCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </TableShell>
+        )}
+      </Card>
+
+      <Card
+        title="Fraîcheur des sources"
+        description="Dernière capture connue de chaque source, tous cycles confondus."
+      >
+        <TableShell caption="Fraîcheur des sources de coûts">
+          <thead>
+            <tr>
+              <th scope="col" className={thClass}>
+                Source
+              </th>
+              <th scope="col" className={thClass}>
+                État
+              </th>
+              <th scope="col" className={thClass}>
+                Dernière capture
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {overview.freshness.map((row) => (
+              <tr key={row.source}>
+                <td className={tdClass}>{row.source}</td>
+                <td className={tdClass}>
+                  <StateBadge state={row.state} />
+                  {row.detail ? (
+                    <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                      {row.detail}
+                    </span>
+                  ) : null}
+                </td>
+                <td className={`${tdClass} tabular-nums`}>{row.lastCapturedAt ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </TableShell>
+      </Card>
+    </>
+  );
+}
