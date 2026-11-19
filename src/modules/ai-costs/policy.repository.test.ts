@@ -178,6 +178,21 @@ describe("applyAllocationPolicy", () => {
     ]);
   });
 
+  it("a dry run returns the plan and writes nothing", async () => {
+    const policy = await createAllocationPolicy("ws-1", seatPolicy);
+    const entryId = addEntry();
+
+    const preview = await applyAllocationPolicy("ws-1", { entryId, policyId: policy.id, measures: ["2", "1"], dryRun: true });
+
+    expect(preview.created).toBe(0);
+    expect(preview.planned.map((row) => [row.dimensions.projectId, row.amount, row.measure])).toEqual([
+      ["p-a", "66.67", "2"],
+      ["p-b", "33.33", "1"],
+    ]);
+    expect(allocations).toHaveLength(0);
+    expect(prisma.costAllocation.createMany).not.toHaveBeenCalled();
+  });
+
   it("splits only the unallocated remainder and keeps existing allocations", async () => {
     const policy = await createAllocationPolicy("ws-1", seatPolicy);
     const entryId = addEntry();

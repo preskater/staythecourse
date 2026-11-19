@@ -32,6 +32,7 @@ import {
 import { listConnections } from "@/modules/integrations/repository";
 import type { ModuleKey } from "@/modules/catalog/catalog";
 import { countProperties } from "@/modules/real-estate/repository";
+import { summarizeUnallocatedCosts, type UnallocatedSummary } from "@/modules/ai-costs/repository";
 
 /**
  * Dashboard queries.
@@ -92,6 +93,8 @@ export type DashboardOverview = {
   budgetTracking: DashboardBudgetTracking | null;
   realEstate: { propertyCount: number } | null;
   integrations: DashboardIntegrationSummary[] | null;
+  /** Cost totals per currency, "not yet allocated" stated explicitly (M9-06). */
+  aiCosts: UnallocatedSummary[] | null;
   /** Open alerts of the active modules, read from the stored episodes (the page refreshes them). */
   alerts: { active: DashboardAlert[] };
 };
@@ -108,10 +111,11 @@ export async function getDashboardOverview(
   const read = <T>(key: ModuleKey, query: () => Promise<T>): Promise<T | null> =>
     options.modules.includes(key) ? query() : Promise.resolve(null);
 
-  const [budgetSections, propertyCount, connections, alerts] = await Promise.all([
+  const [budgetSections, propertyCount, connections, aiCosts, alerts] = await Promise.all([
     read("budget", () => readBudgetSections(workspaceId, { year, month, range })),
     read("real-estate", () => countProperties(workspaceId)),
     read("development", () => listConnections(workspaceId)),
+    read("ai-costs", () => summarizeUnallocatedCosts(workspaceId)),
     // The stored episodes: the page runs the evaluation pass before this read, so the
     // banner shows what the engine just found, not what it found last time.
     listAlerts(workspaceId),
@@ -122,6 +126,7 @@ export async function getDashboardOverview(
     monthLabel: formatMonthLabel(year, month),
     ...(budgetSections ?? { budget: null, budgetTracking: null }),
     realEstate: propertyCount === null ? null : { propertyCount },
+    aiCosts,
     integrations:
       connections?.map((connection) => ({
         connection,

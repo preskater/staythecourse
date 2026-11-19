@@ -14,6 +14,8 @@ const CONSEQUENCES: Partial<Record<ModuleKey, string>> = {
     "Biens, flux, prêts et échéances disparaissent de la navigation, du tableau de bord, des alertes et des exports.",
   development:
     "Les connexions GitHub et GitLab disparaissent de la navigation, du tableau de bord et des alertes ; la synchronisation manuelle n'est plus proposée.",
+  "ai-costs":
+    "La boîte de réception des coûts et la carte « Coûts non répartis » du tableau de bord disparaissent. Les coûts et leurs répartitions sont conservés.",
   "micro-business":
     "Clients et projets disparaissent de la navigation. Les données sont conservées et réapparaissent dès la réactivation du module.",
 };
