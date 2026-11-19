@@ -7,10 +7,9 @@ import { z } from "zod";
  * one, add a new key instead. Anything not listed here is refused, whatever the
  * database or the browser says.
  *
- * Only `budget`, `real-estate` and `development` (the GitHub/GitLab integrations)
- * have pages today; the other keys reserve their identity for later milestones.
- * The dashboard, the alerts and the account page are not modules: every workspace
- * has them.
+ * Modules with a `nav` entry have pages; the other keys reserve their identity for
+ * later milestones. The dashboard, the alerts and the account page are not
+ * modules: every workspace has them.
  */
 
 export const MODULE_KEYS = [
@@ -58,8 +57,8 @@ export const MODULE_CATALOG: Record<ModuleKey, ModuleDefinition> = {
   "ai-costs": {
     label: "Coûts IA",
     requires: [],
-    // The unallocated-cost inbox is the module's first page (M9-06).
-    nav: { href: "/ai-costs/inbox", label: "Coûts IA" },
+    // The overview is the panel's first page (M12-01); it links to the inbox (M9-06).
+    nav: { href: "/ai-costs", label: "Coûts IA" },
     config: noConfig,
   },
   agents: { label: "Agents", requires: [], config: noConfig },
@@ -80,6 +79,56 @@ export const DEFAULT_MODULES: readonly ModuleKey[] = ["budget", "real-estate", "
 
 export function isModuleKey(value: unknown): value is ModuleKey {
   return moduleKeySchema.safeParse(value).success;
+}
+
+export type ModuleSelection =
+  | { status: "ok"; modules: ModuleKey[] }
+  | { status: "empty" }
+  | { status: "unknown_module"; key: string }
+  | { status: "missing_prerequisites"; key: ModuleKey; missing: ModuleKey[] };
+
+/**
+ * Reads the initial module set of a workspace from a comma-separated value, such as the
+ * seed's `SEED_WORKSPACE_MODULES`.
+ *
+ * - Unset keeps `DEFAULT_MODULES`, so an environment written before this option existed
+ *   still creates a usable workspace.
+ * - Empty is refused: it reads as a half-finished edit, not as a deliberate choice.
+ * - Keys are trimmed, deduplicated and returned in catalog order, like `activeModules`.
+ * - An unknown key or a missing prerequisite is refused instead of yielding a module
+ *   that would silently stay inactive.
+ */
+export function selectModules(raw: string | undefined): ModuleSelection {
+  if (raw === undefined) {
+    return { status: "ok", modules: [...DEFAULT_MODULES] };
+  }
+
+  const keys = raw
+    .split(",")
+    .map((key) => key.trim())
+    .filter((key) => key.length > 0);
+
+  if (keys.length === 0) {
+    return { status: "empty" };
+  }
+
+  const selected = new Set<ModuleKey>();
+  for (const key of keys) {
+    if (!isModuleKey(key)) {
+      return { status: "unknown_module", key };
+    }
+    selected.add(key);
+  }
+
+  for (const key of MODULE_KEYS) {
+    if (!selected.has(key)) continue;
+    const missing = MODULE_CATALOG[key].requires.filter((required) => !selected.has(required));
+    if (missing.length > 0) {
+      return { status: "missing_prerequisites", key, missing };
+    }
+  }
+
+  return { status: "ok", modules: MODULE_KEYS.filter((key) => selected.has(key)) };
 }
 
 /**
