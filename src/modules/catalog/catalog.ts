@@ -7,8 +7,8 @@ import { z } from "zod";
  * one, add a new key instead. Anything not listed here is refused, whatever the
  * database or the browser says.
  *
- * Only `budget`, `real-estate` and `development` (the GitHub/GitLab integrations)
- * have pages today; the other keys reserve their identity for later milestones.
+ * Only `budget`, `real-estate`, `development` (the GitHub/GitLab integrations),
+ * `ai-costs` (CSV import) and `micro-business` have pages today; the other keys reserve their identity for later milestones.
  * The dashboard, the alerts and the account page are not modules: every workspace
  * has them.
  */
@@ -55,7 +55,13 @@ export const MODULE_CATALOG: Record<ModuleKey, ModuleDefinition> = {
     nav: { href: "/integrations", label: "Intégrations" },
     config: noConfig,
   },
-  "ai-costs": { label: "Coûts IA", requires: [], config: noConfig },
+  "ai-costs": {
+    label: "Coûts IA",
+    requires: [],
+    // The CSV import is the module's first page (M9-05); an overview arrives with M12-01.
+    nav: { href: "/ai-costs/import", label: "Coûts IA" },
+    config: noConfig,
+  },
   agents: { label: "Agents", requires: [], config: noConfig },
   "micro-business": {
     label: "Micro-entreprise",

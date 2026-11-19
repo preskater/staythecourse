@@ -43,6 +43,8 @@ export const AUDIT_ACTIONS = [
   // Recurring business expenses (M10-05): definitions, never ledger rows.
   "business_expense.create",
   "business_expense.delete",
+  // CSV cost import (M9-05): counts and the import identifier, never a row.
+  "cost.import",
   // Configuration that changes what the dashboard computes.
   "rate.write",
   "rate.billing_write",
@@ -80,6 +82,7 @@ export const AUDIT_ENTITY_TYPES = [
   "BILLING_RATE",
   "INTERNAL_COST_RATE",
   "BUSINESS_EXPENSE",
+  "COST_IMPORT",
   "MODULE",
   "INTEGRATION",
   "OPERATION",
