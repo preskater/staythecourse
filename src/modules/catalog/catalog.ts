@@ -82,6 +82,56 @@ export function isModuleKey(value: unknown): value is ModuleKey {
   return moduleKeySchema.safeParse(value).success;
 }
 
+export type ModuleSelection =
+  | { status: "ok"; modules: ModuleKey[] }
+  | { status: "empty" }
+  | { status: "unknown_module"; key: string }
+  | { status: "missing_prerequisites"; key: ModuleKey; missing: ModuleKey[] };
+
+/**
+ * Reads the initial module set of a workspace from a comma-separated value, such as the
+ * seed's `SEED_WORKSPACE_MODULES`.
+ *
+ * - Unset keeps `DEFAULT_MODULES`, so an environment written before this option existed
+ *   still creates a usable workspace.
+ * - Empty is refused: it reads as a half-finished edit, not as a deliberate choice.
+ * - Keys are trimmed, deduplicated and returned in catalog order, like `activeModules`.
+ * - An unknown key or a missing prerequisite is refused instead of yielding a module
+ *   that would silently stay inactive.
+ */
+export function selectModules(raw: string | undefined): ModuleSelection {
+  if (raw === undefined) {
+    return { status: "ok", modules: [...DEFAULT_MODULES] };
+  }
+
+  const keys = raw
+    .split(",")
+    .map((key) => key.trim())
+    .filter((key) => key.length > 0);
+
+  if (keys.length === 0) {
+    return { status: "empty" };
+  }
+
+  const selected = new Set<ModuleKey>();
+  for (const key of keys) {
+    if (!isModuleKey(key)) {
+      return { status: "unknown_module", key };
+    }
+    selected.add(key);
+  }
+
+  for (const key of MODULE_KEYS) {
+    if (!selected.has(key)) continue;
+    const missing = MODULE_CATALOG[key].requires.filter((required) => !selected.has(required));
+    if (missing.length > 0) {
+      return { status: "missing_prerequisites", key, missing };
+    }
+  }
+
+  return { status: "ok", modules: MODULE_KEYS.filter((key) => selected.has(key)) };
+}
+
 /**
  * The modules a workspace can actually use, in catalog order: enabled, known, and with
  * every prerequisite active in turn. Disabling `budget` therefore switches
