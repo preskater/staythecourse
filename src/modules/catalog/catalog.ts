@@ -7,10 +7,9 @@ import { z } from "zod";
  * one, add a new key instead. Anything not listed here is refused, whatever the
  * database or the browser says.
  *
- * Only `budget`, `real-estate` and `development` (the GitHub/GitLab integrations)
- * have pages today; the other keys reserve their identity for later milestones.
- * The dashboard, the alerts and the account page are not modules: every workspace
- * has them.
+ * Modules with a `nav` entry have pages; the other keys reserve their identity for
+ * later milestones. The dashboard, the alerts and the account page are not
+ * modules: every workspace has them.
  */
 
 export const MODULE_KEYS = [
@@ -58,8 +57,8 @@ export const MODULE_CATALOG: Record<ModuleKey, ModuleDefinition> = {
   "ai-costs": {
     label: "Coûts IA",
     requires: [],
-    // The unallocated-cost inbox is the module's first page (M9-06).
-    nav: { href: "/ai-costs/inbox", label: "Coûts IA" },
+    // The overview is the panel's first page (M12-01); it links to the inbox (M9-06).
+    nav: { href: "/ai-costs", label: "Coûts IA" },
     config: noConfig,
   },
   agents: { label: "Agents", requires: [], config: noConfig },

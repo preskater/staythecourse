@@ -42,6 +42,7 @@ import {
   type CostEntryStatus,
   type CostEntryTotals,
 } from "./ledger";
+import type { OverviewEntryRow, OverviewSourceRow } from "./overview";
 import { costMoney } from "./money";
 import {
   createCostSource,
@@ -966,6 +967,42 @@ export async function deleteCostAllocation(
 
     return count === 1;
   });
+}
+
+/**
+ * What the AI cost overview (M12-01) reads, workspace-scoped.
+ *
+ * `entries` are the entries whose period starts in `[start, end)`; an entry is
+ * counted in the cycle it starts in, so it never appears in two cycles. `sources`
+ * holds the latest capture of each source (kind + provider), over the whole ledger:
+ * freshness is about the source, not about this cycle.
+ *
+ * ponytail: entries are summed in memory; move to a SQL `SUM ... GROUP BY` if a
+ * cycle ever holds more than a few thousand entries.
+ */
+export async function readAiCostOverviewLedger(
+  workspaceId: string,
+  start: Date,
+  end: Date,
+): Promise<{ entries: OverviewEntryRow[]; sources: OverviewSourceRow[] }> {
+  const prisma = getPrisma();
+  const [entries, sources] = await Promise.all([
+    prisma.costEntry.findMany({
+      where: { workspaceId, periodStart: { gte: start, lt: end } },
+      select: { amount: true, currency: true, actuality: true, periodEnd: true },
+    }),
+    prisma.costEntry.findMany({
+      where: { workspaceId },
+      distinct: ["sourceKind", "sourceProvider"],
+      orderBy: { sourceCapturedAt: "desc" },
+      select: { sourceKind: true, sourceProvider: true, sourceCapturedAt: true },
+    }),
+  ]);
+
+  return {
+    entries: entries as OverviewEntryRow[],
+    sources: sources as OverviewSourceRow[],
+  };
 }
 
 /* Unallocated-cost inbox (M9-06). */
