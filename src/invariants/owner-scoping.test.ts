@@ -271,6 +271,7 @@ const MODULES = {
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
   aiCosts: () => import("@/modules/ai-costs/repository"),
+  profitability: () => import("@/modules/profitability/repository"),
   agents: () => import("@/modules/agents/repository"),
 };
 
