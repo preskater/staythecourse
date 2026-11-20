@@ -291,6 +291,8 @@ model Workspace {
   agents               Agent[]
   aiCostLines          AiCostLine[]
   allocationPolicies   AllocationPolicy[]
+  copilotSeatSnapshots CopilotSeatSnapshot[]
+  copilotUsageDays     CopilotUsageDay[]
 }
 
 /// Activation of one catalog module (`src/modules/catalog`) in one workspace. The key is
@@ -1875,4 +1877,62 @@ model AiCostLine {
 
   @@unique([workspaceId, connectionKey, externalId])
   @@index([workspaceId, connectionKey, periodStart])
+}
+
+/// GitHub Copilot seat breakdown of one organization, one row per UTC day (M11-08):
+/// a re-run the same day updates it. Counts only: no member login is ever stored.
+model CopilotSeatSnapshot {
+  id                  String   @id @default(cuid())
+  workspaceId         String
+  /// Stable identifier of the connection; chosen by the caller until M11-05.
+  connectionKey       String
+  /// GitHub organization login.
+  organization        String
+  /// UTC day of the reading.
+  day                 DateTime @db.Date
+  planType            String?
+  total               Int
+  activeThisCycle     Int
+  inactiveThisCycle   Int
+  addedThisCycle      Int
+  pendingInvitation   Int
+  pendingCancellation Int
+  /// Seats counted in GitHub's seat list, reconciled with `total`; `null` when the list
+  /// was longer than the read bound.
+  listedSeats         Int?
+  fetchedAt           DateTime @db.Timestamptz(3)
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, connectionKey, organization, day])
+}
+
+/// One organization day of the Copilot usage-metrics report (M11-08), as GitHub
+/// reports it. Activity, never productivity; a `null` figure is unknown, never zero.
+model CopilotUsageDay {
+  id                         String   @id @default(cuid())
+  workspaceId                String
+  connectionKey              String
+  organization               String
+  day                        DateTime @db.Date
+  dailyActiveUsers           Int
+  weeklyActiveUsers          Int?
+  monthlyActiveUsers         Int?
+  monthlyActiveAgentUsers    Int?
+  dailyActiveCloudAgentUsers Int?
+  interactionCount           Int?
+  codeGenerationCount        Int?
+  codeAcceptanceCount        Int?
+  /// `[{ agentId, agentName, interactions }]`: GitHub's stable agent identifiers.
+  thirdPartyAgents           Json     @default("[]")
+  fetchedAt                  DateTime @db.Timestamptz(3)
+  createdAt                  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, connectionKey, organization, day])
+  @@index([workspaceId, day])
 }

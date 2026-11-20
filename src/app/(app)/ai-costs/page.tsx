@@ -25,6 +25,7 @@ import {
 import { parseExplorerFilters } from "@/modules/ai-costs/explorer";
 import { listExplorerOptions, readAiCostOverviewLedger } from "@/modules/ai-costs/repository";
 import { AiCostsTabs, resolveAiCostsTab } from "./ai-costs-tabs";
+import { CopilotSection } from "./copilot-section";
 import { ExplorerSection } from "./explorer-section";
 
 export const dynamic = "force-dynamic";
@@ -243,6 +244,8 @@ export default async function AiCostsPage({
           </tbody>
         </TableShell>
       </Card>
+
+      <CopilotSection workspaceId={user.workspace.id} />
     </>
   );
 }

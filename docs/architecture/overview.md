@@ -1497,6 +1497,19 @@ age is not restorability: that verification is SO-04.
   There is no cost entry UI, no import, no provider synchronisation, no exchange-rate conversion and no
   profitability calculation yet. Finalization is per entry, not a separate
   period-closing record: every entry of a period must be finalized to close it.
+- GitHub Copilot (M11-08, `src/modules/integrations/copilot.ts`) is read with a classic
+  `read:org` token (fine-grained: "View Organization Copilot Metrics"; the seat
+  endpoints also need organization owner rights). It stores, per organization and UTC
+  day, the seat breakdown (`CopilotSeatSnapshot`, reconciled exactly with a count of
+  GitHub's seat list) and the `organization-1-day` usage report (`CopilotUsageDay`,
+  including third-party agents with GitHub's stable `agentId`). Reports are NDJSON
+  files behind signed links, fetched without the token; they exist from 2025-12-12 and
+  land about two UTC days late, and a day without a report stays absent. No member
+  login is stored and no figure is shown per member. Copilot exposes no price, so the
+  adapter implements no `listCosts`: its cost comes from the GitHub invoice. The
+  "GitHub Copilot" card on `/ai-costs` labels every figure as activity, never
+  productivity. No scheduled synchronisation calls `importCopilotUsage` yet, and the
+  token is passed per call until M11-05 stores it.
 - The `micro-business` module ships clients and projects only: no revenue entry,
   invoice, credit note, payment, rate card or business expense exists yet (M10-02 and
   later). No client or project is deleted, only archived.

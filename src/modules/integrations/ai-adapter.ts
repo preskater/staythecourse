@@ -39,9 +39,10 @@ import { parseRetryAfterSeconds, ProviderError } from "./adapter";
 /**
  * `CUSTOM` covers a self-hosted or less common provider (an internal gateway, an
  * OpenAI-compatible server...): it has no public API, so its connection must give
- * an `instanceUrl`, like a self-hosted GitLab.
+ * an `instanceUrl`, like a self-hosted GitLab. `GITHUB_COPILOT` reads seats and
+ * activity through a GitHub token (M11-08).
  */
-export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER", "CUSTOM"] as const;
+export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER", "CUSTOM", "GITHUB_COPILOT"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
 export type AiRequest = {
@@ -65,6 +66,12 @@ export type AiPageRequest = AiRequest & {
   cursor: string | null;
   /** Bounds one run so it cannot loop forever. */
   maxPages?: number;
+  /**
+   * `AiScope.externalId` to read, for a credential that spans several scopes (a GitHub
+   * token sees several organizations). Ignored by adapters whose credential is bound
+   * to one scope.
+   */
+  scopeId?: string;
 };
 
 export const DEFAULT_AI_MAX_PAGES = 20;
@@ -149,7 +156,11 @@ export interface AiProviderAdapter {
    * tracked" rather than show an empty list, which would read as "no usage".
    */
   listUsage?(request: AiPageRequest): Promise<AiPageOutcome<AiUsageRecord>>;
-  listCosts(request: AiPageRequest): Promise<AiPageOutcome<AiCostRecord>>;
+  /**
+   * Absent when the provider exposes no amount (Copilot reports seats, not prices): the
+   * interface must say "cost not tracked", never show a zero cost.
+   */
+  listCosts?(request: AiPageRequest): Promise<AiPageOutcome<AiCostRecord>>;
 }
 
 /** One page as an adapter reads it: validated records and the next cursor. */
