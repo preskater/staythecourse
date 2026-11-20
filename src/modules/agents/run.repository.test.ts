@@ -51,6 +51,9 @@ const prisma = {
         toolCalls: null,
         result: null,
         initiator: null,
+        taskType: "UNKNOWN",
+        outcome: "UNKNOWN",
+        classificationSource: null,
         // Like Prisma: `undefined` falls back to the column default.
         ...Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
         id: `run-${++sequence}`,
@@ -65,6 +68,11 @@ const prisma = {
       // Like Prisma: `undefined` leaves the column untouched.
       Object.entries(data).forEach(([key, value]) => value !== undefined && (row[key] = value));
       return row;
+    }),
+    updateMany: vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
+      const hits = runs.filter((row) => row.id === where.id && row.workspaceId === where.workspaceId);
+      hits.forEach((row) => Object.entries(data).forEach(([key, value]) => value !== undefined && (row[key] = value)));
+      return { count: hits.length };
     }),
     findMany: vi.fn(async ({ where }: { where: Row & { costs?: { some: { costEntryId: string } } } }) =>
       runs
@@ -91,7 +99,7 @@ const prisma = {
 
 vi.mock("@/lib/db", () => ({ getPrisma: () => prisma }));
 
-const { ingestAgentRuns, listAgentRuns, listRunsForCostEntry } = await import("./run.repository");
+const { classifyAgentRun, ingestAgentRuns, listAgentRuns, listRunsForCostEntry } = await import("./run.repository");
 
 const full = {
   externalRef: "run-a",
@@ -184,5 +192,43 @@ describe("ingestAgentRuns", () => {
       /metadata contract/,
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("taxonomy (M13-03)", () => {
+  it("leaves an unclassified run explicitly UNKNOWN, with no source", async () => {
+    await ingestAgentRuns("ws-1", [full]);
+
+    const [run] = await listAgentRuns("ws-1");
+    expect(run).toMatchObject({ taskType: "UNKNOWN", outcome: "UNKNOWN", classificationSource: null });
+  });
+
+  it("records codes sent at ingestion as set by the adapter", async () => {
+    await ingestAgentRuns("ws-1", [{ ...full, taskType: "REVIEW" }]);
+    await ingestAgentRuns("ws-1", [{ ...full, outcome: "ACCEPTED" }]);
+
+    const [run] = await listAgentRuns("ws-1");
+    expect(run).toMatchObject({ taskType: "REVIEW", outcome: "ACCEPTED", classificationSource: "ADAPTER" });
+  });
+
+  it("never lets re-ingestion overwrite a person's classification", async () => {
+    await ingestAgentRuns("ws-1", [{ ...full, taskType: "REVIEW", outcome: "ACCEPTED" }]);
+    const [{ id }] = await listAgentRuns("ws-1");
+
+    expect(await classifyAgentRun("ws-1", id, { outcome: "REJECTED" })).toBe(true);
+    await ingestAgentRuns("ws-1", [{ ...full, taskType: "TEST", outcome: "ACCEPTED" }]);
+
+    const [run] = await listAgentRuns("ws-1");
+    expect(run).toMatchObject({ taskType: "REVIEW", outcome: "REJECTED", classificationSource: "MANUAL" });
+  });
+
+  it("refuses unknown codes and another workspace's run", async () => {
+    await expect(ingestAgentRuns("ws-1", [{ ...full, outcome: "MERGED" }])).rejects.toThrow(/expected one of/);
+    await ingestAgentRuns("ws-1", [full]);
+    const [{ id }] = await listAgentRuns("ws-1");
+
+    expect(await classifyAgentRun("ws-2", id, { outcome: "ACCEPTED" })).toBe(false);
+    await expect(classifyAgentRun("ws-1", id, {})).rejects.toThrow(/task type or an outcome/);
+    expect((await listAgentRuns("ws-1"))[0].outcome).toBe("UNKNOWN");
   });
 });

@@ -9,6 +9,13 @@ import {
   type AgentRunWrite,
   type RunTrackedField,
 } from "./run";
+import {
+  validateOutcome,
+  validateTaskType,
+  type AgentRunOutcome,
+  type AgentTaskType,
+  type ClassificationSource,
+} from "./taxonomy";
 
 /**
  * Agent run persistence (M13-02), workspace-scoped (M7-04).
@@ -16,6 +23,9 @@ import {
  * Ingestion is idempotent on `(workspaceId, externalRef)`: re-sending a run updates
  * it, never duplicates it. Known values only fill or replace; unknown ones never
  * erase. Delivery and cost links only accumulate. A batch is all-or-nothing.
+ *
+ * Taxonomy (M13-03): codes sent at ingestion are recorded as ADAPTER; a person's
+ * classification (`classifyAgentRun`, MANUAL) is never overwritten by re-ingestion.
  *
  * Authorization is the caller's job: reach these functions only after a server-side
  * permission check.
@@ -35,6 +45,10 @@ export type AgentRunRecord = {
   readonly result: AgentRunResult | null;
   readonly initiator: string | null;
   readonly deliveryLinks: readonly string[];
+  readonly taskType: AgentTaskType;
+  readonly outcome: AgentRunOutcome;
+  /** `null` while nobody classified the run. */
+  readonly classificationSource: ClassificationSource | null;
   /** Empty means the run's cost is unknown, not zero. */
   readonly costEntryIds: readonly string[];
   readonly missingFields: readonly RunTrackedField[];
@@ -43,8 +57,14 @@ export type AgentRunRecord = {
   readonly updatedAt: Date;
 };
 
-type RunRow = Omit<AgentRunRecord, "costEntryIds" | "missingFields" | "partial" | "result"> & {
+type RunRow = Omit<
+  AgentRunRecord,
+  "costEntryIds" | "missingFields" | "partial" | "result" | "taskType" | "outcome" | "classificationSource"
+> & {
   result: string | null;
+  taskType: string;
+  outcome: string;
+  classificationSource: string | null;
   costs: { costEntryId: string }[];
 };
 
@@ -62,6 +82,9 @@ const RUN_SELECT = {
   result: true,
   initiator: true,
   deliveryLinks: true,
+  taskType: true,
+  outcome: true,
+  classificationSource: true,
   createdAt: true,
   updatedAt: true,
   costs: { select: { costEntryId: true }, orderBy: { costEntryId: "asc" as const } },
@@ -73,10 +96,19 @@ function toRun({ costs, ...row }: RunRow): AgentRunRecord {
   return {
     ...row,
     result: row.result as AgentRunResult | null,
+    taskType: row.taskType as AgentTaskType,
+    outcome: row.outcome as AgentRunOutcome,
+    classificationSource: row.classificationSource as ClassificationSource | null,
     costEntryIds: costs.map((cost) => cost.costEntryId),
     missingFields,
     partial: missingFields.length > 0,
   };
+}
+
+/** Taxonomy columns to write, or none when a person already classified the run. */
+function adapterClassification(run: AgentRunWrite, existingSource: string | null = null) {
+  if (existingSource === "MANUAL" || (run.taskType === undefined && run.outcome === undefined)) return {};
+  return { taskType: run.taskType, outcome: run.outcome, classificationSource: "ADAPTER" as const };
 }
 
 function knownFields(run: AgentRunWrite) {
@@ -133,7 +165,7 @@ export async function ingestAgentRuns(
     for (const run of runs) {
       const existing = await tx.agentRun.findUnique({
         where: { workspaceId_externalRef: { workspaceId, externalRef: run.externalRef } },
-        select: { id: true, agentVersionId: true, deliveryLinks: true },
+        select: { id: true, agentVersionId: true, deliveryLinks: true, classificationSource: true },
       });
 
       let runId: string;
@@ -147,6 +179,7 @@ export async function ingestAgentRuns(
           where: { id: existing.id },
           data: {
             ...knownFields(run),
+            ...adapterClassification(run, existing.classificationSource),
             deliveryLinks: [...new Set([...existing.deliveryLinks, ...run.deliveryLinks])],
           },
         });
@@ -156,6 +189,7 @@ export async function ingestAgentRuns(
         const row = await tx.agentRun.create({
           data: {
             ...knownFields(run),
+            ...adapterClassification(run),
             workspaceId,
             externalRef: run.externalRef,
             agentVersionId: run.agentVersionId,
@@ -203,4 +237,27 @@ export async function listRunsForCostEntry(workspaceId: string, costEntryId: str
   })) as RunRow[];
 
   return rows.map(toRun);
+}
+
+/**
+ * A person classifies a run (MANUAL). Absent fields keep their value; `UNKNOWN` is
+ * allowed. Returns `false` when the run is not in this workspace.
+ */
+export async function classifyAgentRun(
+  workspaceId: string,
+  runId: string,
+  input: { taskType?: unknown; outcome?: unknown },
+): Promise<boolean> {
+  const taskType = input.taskType === undefined ? undefined : validateTaskType(input.taskType);
+  const outcome = input.outcome === undefined ? undefined : validateOutcome(input.outcome);
+  if (taskType === undefined && outcome === undefined) {
+    throw new InvalidAgentRunError("classification", "expected a task type or an outcome");
+  }
+
+  const { count } = await getPrisma().agentRun.updateMany({
+    where: { id: runId, workspaceId },
+    data: { taskType, outcome, classificationSource: "MANUAL" },
+  });
+
+  return count === 1;
 }
