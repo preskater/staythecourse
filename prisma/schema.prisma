@@ -493,7 +493,7 @@ model Transaction {
 
   user                User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account             Account              @relation(fields: [accountId], references: [id], onDelete: Restrict)
   category            Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   cashflows           PropertyCashflow[]
   recurringOccurrence RecurringOccurrence?
@@ -945,9 +945,9 @@ model RevenueDocument {
   updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
 
   workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
   client        Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  creditNoteFor RevenueDocument?  @relation("RevenueCreditNotes", fields: [creditNoteForId], references: [id], onDelete: Cascade)
+  creditNoteFor RevenueDocument?  @relation("RevenueCreditNotes", fields: [creditNoteForId], references: [id], onDelete: Restrict)
   creditedBy    RevenueDocument[] @relation("RevenueCreditNotes")
   payments      RevenuePayment[]
   refunds       RevenueRefund[]
@@ -1037,7 +1037,7 @@ model BillingRate {
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   /// A client with rate history is never silently removed; archiving keeps it linked.
-  client    Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client    Client    @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   @@unique([clientId, year, month])
   @@index([workspaceId, clientId, year, month])
