@@ -66,6 +66,11 @@ export const AUDIT_ACTIONS = [
   // Provider connections and deferred reads.
   "integration.connect",
   "integration.sync",
+  // AI provider credentials (M11-05): the secret itself is never recorded.
+  "ai_connection.connect",
+  "ai_connection.rotate",
+  "ai_connection.validate",
+  "ai_connection.revoke",
   // Operator procedures, recorded by a server-side job rather than the browser.
   "backup.run",
   "restore.run",
