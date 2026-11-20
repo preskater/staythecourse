@@ -35,6 +35,7 @@ const prisma = {
   integrationConnection: table,
   issueSnapshot: table,
   agent: table,
+  providerInvoice: table,
   // Interactive transactions hand the same fake client back to the callback.
   $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
 };
@@ -58,6 +59,9 @@ const { findConnectionForSync, listIssues } = await import("./integrations/repos
 const { findExchangeRateSnapshotById, readAiCostOverviewLedger, recordExchangeRate } =
   await import("./ai-costs/repository");
 const { findAgent, updateAgentDetails } = await import("./agents/repository");
+const { createProviderInvoice, deleteProviderInvoice, InvalidInvoiceError } = await import(
+  "./ai-costs/invoice.repository"
+);
 
 const FOREIGN = "ws-someone-else";
 
@@ -253,6 +257,32 @@ describe("ai-costs", () => {
     expect(createMock.mock.calls[0][0]).toMatchObject({
       data: { workspaceId: "ws-1", baseCurrency: "USD", quoteCurrency: "EUR" },
     });
+  });
+
+  it("never deletes another workspace's invoice", async () => {
+    deleteManyMock.mockResolvedValueOnce({ count: 0 });
+    expect(await deleteProviderInvoice(FOREIGN, "invoice-1")).toBe(false);
+    expect(where(deleteManyMock)).toEqual({ id: "invoice-1", workspaceId: FOREIGN });
+  });
+
+  it("refuses an invoice citing another workspace's rate, before any write", async () => {
+    findFirstMock.mockResolvedValueOnce(null);
+    await expect(
+      createProviderInvoice("ws-1", {
+        provider: "OPENAI",
+        number: "INV-001",
+        periodStart: new Date("2026-10-01"),
+        periodEnd: new Date("2026-10-31"),
+        issuedOn: new Date("2026-11-02"),
+        currency: "EUR",
+        total: new Decimal("10"),
+        exchangeRateSnapshotId: "foreign-rate",
+        notes: null,
+        lines: [{ label: "Usage", amount: new Decimal("10"), category: "USAGE" }],
+      }),
+    ).rejects.toBeInstanceOf(InvalidInvoiceError);
+    expect(where(findFirstMock)).toEqual({ id: "foreign-rate", workspaceId: "ws-1" });
+    expect(createMock).not.toHaveBeenCalled();
   });
 });
 

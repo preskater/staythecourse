@@ -224,6 +224,17 @@ enum CostSourceKind {
   MANUAL
 }
 
+/// What an AI provider invoice line is (M11-06). Only `USAGE` is compared with the
+/// provider-reported cost; the other categories explain the rest of the gap.
+enum InvoiceLineCategory {
+  USAGE
+  CREDIT
+  DISCOUNT
+  TAX
+  FX
+  OTHER
+}
+
 /// A draft entry can be edited and allocated; a finalized one is history.
 enum CostEntryStatus {
   DRAFT
@@ -291,6 +302,7 @@ model Workspace {
   agents               Agent[]
   aiCostLines          AiCostLine[]
   allocationPolicies   AllocationPolicy[]
+  providerInvoices     ProviderInvoice[]
 }
 
 /// Activation of one catalog module (`src/modules/catalog`) in one workspace. The key is
@@ -1798,7 +1810,8 @@ model ExchangeRateSnapshot {
   source        Json
   recordedAt    DateTime @default(now()) @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invoices  ProviderInvoice[]
 
   @@index([workspaceId, baseCurrency, quoteCurrency, rateDate], map: "ExchangeRateSnapshot_workspace_pair_rateDate_idx")
 }
@@ -1875,4 +1888,54 @@ model AiCostLine {
 
   @@unique([workspaceId, connectionKey, externalId])
   @@index([workspaceId, connectionKey, periodStart])
+}
+
+/// Metadata of one AI provider invoice, typed by hand (M11-06). Never the document
+/// itself. Compared with the provider-reported `AiCostLine` totals of its period;
+/// neither side ever overwrites the other.
+model ProviderInvoice {
+  id                     String   @id @default(cuid())
+  workspaceId            String
+  /// `AiProvider` code, for example `OPENAI`.
+  provider               String
+  number                 String
+  /// First calendar day billed, inclusive.
+  periodStart            DateTime @db.Date
+  /// Last calendar day billed, inclusive.
+  periodEnd              DateTime @db.Date
+  issuedOn               DateTime @db.Date
+  currency               String   @db.Char(3)
+  /// Total due as printed on the invoice. Signed: a credit note is negative.
+  total                  Decimal  @db.Decimal(18, 2)
+  /// Rate used to express the provider-reported cost in the invoice currency, when
+  /// they differ. Required by `FX` lines.
+  exchangeRateSnapshotId String?
+  notes                  String?
+  createdAt              DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace    Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  exchangeRate ExchangeRateSnapshot? @relation(fields: [exchangeRateSnapshotId], references: [id], onDelete: Restrict)
+  lines        ProviderInvoiceLine[]
+
+  @@unique([workspaceId, provider, number])
+  @@index([workspaceId, periodStart])
+  @@index([exchangeRateSnapshotId])
+}
+
+/// One line of a provider invoice. Child table: reached only through its invoice,
+/// which is workspace-scoped (M7-04).
+model ProviderInvoiceLine {
+  id        String              @id @default(cuid())
+  invoiceId String
+  /// 0-based order on the invoice.
+  position  Int
+  label     String
+  /// Signed: a credit or a discount is negative.
+  amount    Decimal             @db.Decimal(18, 2)
+  category  InvoiceLineCategory
+
+  invoice ProviderInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, position])
 }
