@@ -4,6 +4,7 @@ import type { AuditAction } from "@/modules/audit/domain";
 import { ProviderError } from "@/modules/integrations/adapter";
 import type { AiProviderAdapter } from "@/modules/integrations/ai-adapter";
 import { anthropicAdapter } from "@/modules/integrations/anthropic";
+import { cursorAdapter } from "@/modules/integrations/cursor";
 import { openAiAdapter } from "@/modules/integrations/openai";
 import { openRouterAdapter } from "@/modules/integrations/openrouter";
 import {
@@ -28,7 +29,7 @@ import {
  */
 
 /** Providers with an adapter able to test a credential. `CUSTOM` has none yet. */
-export const AI_CONNECTION_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER"] as const;
+export const AI_CONNECTION_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER", "CURSOR"] as const;
 export type AiProviderCode = (typeof AI_CONNECTION_PROVIDERS)[number];
 
 export const AI_CONNECTION_STATUSES = ["VALID", "INVALID", "REVOKED"] as const;
@@ -53,12 +54,14 @@ export const AI_PROVIDER_LABELS: Record<AiProviderCode, { name: string; credenti
   OPENAI: { name: "OpenAI", credential: "Clé admin de l'organisation, en lecture seule (usage et projets)" },
   ANTHROPIC: { name: "Anthropic", credential: "Clé Admin API de l'organisation" },
   OPENROUTER: { name: "OpenRouter", credential: "Clé de gestion (management key)" },
+  CURSOR: { name: "Cursor", credential: "Clé API d'équipe (portée read:*)" },
 };
 
 export const ADAPTERS: Record<AiProviderCode, AiProviderAdapter> = {
   OPENAI: openAiAdapter,
   ANTHROPIC: anthropicAdapter,
   OPENROUTER: openRouterAdapter,
+  CURSOR: cursorAdapter,
 };
 
 /** French text for a safe error code; the code itself is what gets stored. */

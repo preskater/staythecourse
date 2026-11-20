@@ -41,7 +41,7 @@ import { parseRetryAfterSeconds, ProviderError } from "./adapter";
  * OpenAI-compatible server...): it has no public API, so its connection must give
  * an `instanceUrl`, like a self-hosted GitLab.
  */
-export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER", "CUSTOM"] as const;
+export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER", "CURSOR", "CUSTOM"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
 export type AiRequest = {
@@ -80,7 +80,8 @@ export type AiAuthResult = {
 export type AiScope = {
   externalId: string;
   name: string;
-  kind: "organization" | "project" | "workspace" | "api_key";
+  /** `member`: a person of a team plan (Cursor), whose spend is attributed to them. */
+  kind: "organization" | "project" | "workspace" | "api_key" | "member";
 };
 
 export type AiDiscovery = {
@@ -375,7 +376,7 @@ export function assertAiScope(scope: Partial<Record<keyof AiScope, unknown>>): v
   if (
     !isText(scope.externalId) ||
     !isText(scope.name) ||
-    !["organization", "project", "workspace", "api_key"].includes(scope.kind as string)
+    !["organization", "project", "workspace", "api_key", "member"].includes(scope.kind as string)
   ) {
     throw invalid("Périmètre");
   }

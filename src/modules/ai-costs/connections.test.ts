@@ -29,7 +29,7 @@ const actor = { workspaceId: "ws-1", actorId: "user-1" };
 
 function adapters(testAuth: (request: { token: string }) => Promise<{ accountLabel: string; grantedScopes: string[] | null }>) {
   const auth = { testAuth: vi.fn(testAuth) };
-  return { auth, deps: { adapters: { OPENAI: auth, ANTHROPIC: auth, OPENROUTER: auth }, now: () => AT } };
+  return { auth, deps: { adapters: { OPENAI: auth, ANTHROPIC: auth, OPENROUTER: auth, CURSOR: auth }, now: () => AT } };
 }
 
 const accepted = () => adapters(async () => ({ accountLabel: "Compte OpenRouter", grantedScopes: null }));
