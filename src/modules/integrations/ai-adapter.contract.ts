@@ -22,6 +22,8 @@ export type AiContractHarness = {
   token: string;
   /** `""` for the provider's public API; a self-hosted URL for `CUSTOM`. */
   instanceUrl: string;
+  /** Scope passed to listings, for adapters whose credential spans several. */
+  scopeId?: string;
   transports: {
     /** Auth and discovery succeed; usage and costs span at least two pages each. */
     healthy: () => typeof fetch;
@@ -46,12 +48,12 @@ const RANGE = {
 type Listing = "listUsage" | "listCosts";
 
 export function describeAiAdapterContract(harness: AiContractHarness): void {
-  const { adapter, token, instanceUrl, transports } = harness;
+  const { adapter, token, instanceUrl, scopeId, transports } = harness;
 
-  // An adapter without `listUsage` does not import usage: only its costs are checked.
-  const listings: Listing[] = adapter.listUsage ? ["listUsage", "listCosts"] : ["listCosts"];
+  // A listing the adapter does not implement is "not tracked": only the others are checked.
+  const listings = (["listUsage", "listCosts"] as const).filter((listing) => adapter[listing] !== undefined);
   const list = (listing: Listing, request: AiPageRequest): Promise<AiPageOutcome<{ externalId: string }>> =>
-    listing === "listCosts" ? adapter.listCosts(request) : adapter.listUsage!(request);
+    listing === "listCosts" ? adapter.listCosts!(request) : adapter.listUsage!(request);
 
   const page = (fetchImpl: typeof fetch, extra: Partial<AiPageRequest> = {}): AiPageRequest => ({
     token,
@@ -59,6 +61,7 @@ export function describeAiAdapterContract(harness: AiContractHarness): void {
     fetchImpl,
     ...RANGE,
     cursor: null,
+    ...(scopeId ? { scopeId } : {}),
     ...extra,
   });
 
@@ -91,6 +94,10 @@ export function describeAiAdapterContract(harness: AiContractHarness): void {
   }
 
   describe(`contrat adaptateur IA : ${harness.name}`, () => {
+    it("implements at least one listing", () => {
+      expect(listings.length).toBeGreaterThan(0);
+    });
+
     it("declares read-only scopes", () => {
       for (const scope of adapter.requiredScopes) {
         expect(scope).not.toMatch(/write|admin:write|delete/i);

@@ -31,7 +31,7 @@ export type OpenAiImportResult = {
 };
 
 type Dependencies = {
-  adapter: Pick<AiProviderAdapter, "listCosts">;
+  adapter: Required<Pick<AiProviderAdapter, "listCosts">>;
   organizationTotals: (request: Omit<AiPageRequest, "cursor">) => Promise<OpenAiOrganizationTotals>;
   now: () => Date;
 };

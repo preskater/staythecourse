@@ -34,8 +34,8 @@ import type {
  * repositories the owner is allowed to read. Only normalised metadata is kept:
  * no file content, no commit content, no issue description, no comment body.
  */
-const API_BASE = "https://api.github.com";
-const API_VERSION = "2022-11-28";
+export const API_BASE = "https://api.github.com";
+export const API_VERSION = "2022-11-28";
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_PAGES = 5;
 /** Issues are queried per repository, so the run is bounded. */

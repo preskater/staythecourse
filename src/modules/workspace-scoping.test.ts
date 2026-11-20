@@ -35,6 +35,8 @@ const prisma = {
   integrationConnection: table,
   issueSnapshot: table,
   agent: table,
+  copilotSeatSnapshot: table,
+  copilotUsageDay: table,
   // Interactive transactions hand the same fake client back to the callback.
   $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
 };
@@ -58,6 +60,7 @@ const { findConnectionForSync, listIssues } = await import("./integrations/repos
 const { findExchangeRateSnapshotById, readAiCostOverviewLedger, recordExchangeRate } =
   await import("./ai-costs/repository");
 const { findAgent, updateAgentDetails } = await import("./agents/repository");
+const { readCopilotOverview } = await import("./ai-costs/copilot.repository");
 
 const FOREIGN = "ws-someone-else";
 
@@ -253,6 +256,16 @@ describe("ai-costs", () => {
     expect(createMock.mock.calls[0][0]).toMatchObject({
       data: { workspaceId: "ws-1", baseCurrency: "USD", quoteCurrency: "EUR" },
     });
+  });
+});
+
+describe("copilot", () => {
+  it("reads seats and activity from the given workspace only", async () => {
+    findManyMock.mockResolvedValue([]);
+    expect(await readCopilotOverview(FOREIGN)).toEqual({ seats: [], days: [] });
+    for (const call of findManyMock.mock.calls) {
+      expect((call[0] as { where: unknown }).where).toEqual({ workspaceId: FOREIGN });
+    }
   });
 });
 

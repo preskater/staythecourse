@@ -173,7 +173,7 @@ async function listProjects(request: AiRequest, maxPages: number): Promise<AiSco
   return outcome.records;
 }
 
-export const openAiAdapter: AiProviderAdapter = {
+export const openAiAdapter = {
   provider: "OPENAI",
   // Admin key restricted to read access on usage and projects.
   requiredScopes: ["api.usage.read", "api.management.read"],
@@ -190,7 +190,7 @@ export const openAiAdapter: AiProviderAdapter = {
   },
 
   listCosts: (request) => readCostPages(request, OPENAI_COST_GROUP_BY),
-};
+} satisfies AiProviderAdapter;
 
 export type OpenAiOrganizationTotals = {
   /** Sum per uppercase currency, exact. */
