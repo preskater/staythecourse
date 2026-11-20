@@ -97,8 +97,13 @@ export type AiUsageRecord = {
   /** UTC instants of the bucket covered; `periodStart` inclusive, `periodEnd` exclusive. */
   periodStart: Date;
   periodEnd: Date;
+  /** Every input token, cached or not. */
   inputTokens: number;
   outputTokens: number;
+  /** Part of `inputTokens` read from a prompt cache; `null` when the provider does not say. */
+  cachedInputTokens: number | null;
+  /** Part of `outputTokens` spent reasoning; `null` when the provider does not say. */
+  reasoningTokens: number | null;
   /** `null` when the provider does not report request counts. */
   requests: number | null;
   /** Further provider dimensions (service tier...); an absent key is **unknown**. */
@@ -138,6 +143,20 @@ export type AiSyncWarning = {
   /** Provider rows concerned; `null` when the warning is about the window, not rows. */
   count: number | null;
 };
+
+/** Counts warnings by code across pages; a window-level warning has `count: null`. */
+export class AiWarnings {
+  private readonly counts = new Map<string, number | null>();
+
+  add(code: string, rows: number | null = 1): void {
+    const previous = this.counts.get(code);
+    this.counts.set(code, rows === null || previous === null ? null : (previous ?? 0) + rows);
+  }
+
+  list(): AiSyncWarning[] {
+    return [...this.counts].map(([code, count]) => ({ code, count }));
+  }
+}
 
 export type AiPageOutcome<T> = {
   records: T[];
@@ -324,6 +343,8 @@ export function assertUsageRecord(record: Partial<Record<keyof AiUsageRecord, un
     !isCount(record.inputTokens) ||
     !isCount(record.outputTokens) ||
     !(record.requests === null || isCount(record.requests)) ||
+    !(record.cachedInputTokens === null || isCount(record.cachedInputTokens)) ||
+    !(record.reasoningTokens === null || isCount(record.reasoningTokens)) ||
     !isDimensions(record.dimensions)
   ) {
     throw invalid("Enregistrement d'usage");

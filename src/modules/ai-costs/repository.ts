@@ -1381,6 +1381,8 @@ export async function upsertAiUsageLines(
         periodEnd: record.periodEnd,
         inputTokens: BigInt(record.inputTokens),
         outputTokens: BigInt(record.outputTokens),
+        cachedInputTokens: record.cachedInputTokens === null ? null : BigInt(record.cachedInputTokens),
+        reasoningTokens: record.reasoningTokens === null ? null : BigInt(record.reasoningTokens),
         requests: record.requests,
         dimensions: { ...record.dimensions },
         fetchedAt: input.fetchedAt,

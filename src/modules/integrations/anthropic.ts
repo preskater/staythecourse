@@ -14,8 +14,8 @@ import {
   type AiProviderAdapter,
   type AiRequest,
   type AiScope,
-  type AiSyncWarning,
   type AiUsageRecord,
+  AiWarnings,
 } from "./ai-adapter";
 
 /**
@@ -144,21 +144,7 @@ function assertWindow(request: AiPageRequest): void {
   }
 }
 
-/** Counts warnings by code across pages; a window-level warning has `count: null`. */
-class Warnings {
-  private readonly counts = new Map<string, number | null>();
-
-  add(code: string, rows: number | null = 1): void {
-    const previous = this.counts.get(code);
-    this.counts.set(code, rows === null ? null : (previous ?? 0) + rows);
-  }
-
-  list(): AiSyncWarning[] {
-    return [...this.counts].map(([code, n]) => ({ code, count: n }));
-  }
-}
-
-type Normalise<T> = (row: Row, group: Record<string, unknown>, warnings: Warnings) => T | null;
+type Normalise<T> = (row: Row, group: Record<string, unknown>, warnings: AiWarnings) => T | null;
 
 async function readAnalytics<T>(
   request: AiPageRequest,
@@ -169,7 +155,7 @@ async function readAnalytics<T>(
   assertWindow(request);
 
   const read = async (cursor: string | null) => {
-    const warnings = new Warnings();
+    const warnings = new AiWarnings();
     const outcome = await collectAiPages({ ...request, cursor }, async (page): Promise<AiPage<T>> => {
       const query = new URLSearchParams({
         starting_at: isoSeconds(request.start),
@@ -258,6 +244,8 @@ const normaliseUsage: Normalise<AiUsageRecord> = (row, group, warnings) => {
       count(usage.cache_creation?.ephemeral_1h_input_tokens, "jetons de cache") +
       count(usage.cache_read_input_tokens, "jetons lus en cache"),
     outputTokens: count(usage.output_tokens, "jetons de sortie"),
+    cachedInputTokens: count(usage.cache_read_input_tokens, "jetons lus en cache"),
+    reasoningTokens: null,
     requests: usage.requests === null || usage.requests === undefined ? null : count(usage.requests, "requêtes"),
     dimensions,
   };

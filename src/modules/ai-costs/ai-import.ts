@@ -2,11 +2,13 @@ import type Decimal from "decimal.js";
 import { recordAuditEventSafely } from "@/modules/audit/repository";
 import { ProviderError } from "@/modules/integrations/adapter";
 import type {
+  AiPageOutcome,
   AiPageRequest,
   AiPageStop,
   AiProvider,
   AiProviderAdapter,
   AiSyncWarning,
+  AiUsageRecord,
 } from "@/modules/integrations/ai-adapter";
 import { reconcileTotals, type ReconciliationResult } from "./reconciliation";
 import { sumAiCostLines, upsertAiCostLines, upsertAiUsageLines } from "./repository";
@@ -77,6 +79,28 @@ function mergeWarnings(...lists: (AiSyncWarning[] | undefined)[]): AiSyncWarning
   return [...merged].map(([code, count]) => ({ code, count }));
 }
 
+/**
+ * Usage is read after the costs, often within the same throttling window: a refusal on
+ * its first page postpones it to the next run (same cursor) instead of failing a run
+ * whose costs are already stored. With `usageStoppedBy` set, a `null` cursor means
+ * "start from the first page", not "complete".
+ */
+async function readUsage(
+  listUsage: NonNullable<AiProviderAdapter["listUsage"]>,
+  input: AiImportInput,
+  now: () => Date,
+): Promise<AiPageOutcome<AiUsageRecord>> {
+  const cursor = input.usageCursor ?? null;
+  try {
+    return await listUsage({ ...input.request, cursor });
+  } catch (error) {
+    if (error instanceof ProviderError && (error.code === "RATE_LIMITED" || error.code === "NETWORK")) {
+      return { records: [], nextCursor: cursor, stoppedBy: error.code, pagesRead: 0, fetchedAt: now() };
+    }
+    throw error;
+  }
+}
+
 export async function importAiProvider(
   input: AiImportInput,
   dependencies: AiImportDependencies,
@@ -102,9 +126,7 @@ export async function importAiProvider(
       fetchedAt: now(),
     });
 
-    const usage = adapter.listUsage
-      ? await adapter.listUsage({ ...input.request, cursor: input.usageCursor ?? null })
-      : null;
+    const usage = adapter.listUsage ? await readUsage(adapter.listUsage, input, now) : null;
     const usageLinesImported = usage
       ? await upsertAiUsageLines(input.workspaceId, {
           connectionKey: input.connectionKey,

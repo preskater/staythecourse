@@ -1880,30 +1880,34 @@ model AiCostLine {
 
 /// Imported AI provider usage lines (M11-03): token and request counts, metadata only.
 model AiUsageLine {
-  id            String   @id @default(cuid())
-  workspaceId   String
+  id                String   @id @default(cuid())
+  workspaceId       String
   /// Same meaning as `AiCostLine.connectionKey`.
-  connectionKey String
+  connectionKey     String
   /// `AiProvider` code, for example `ANTHROPIC`.
-  provider      String
-  externalId    String
+  provider          String
+  externalId        String
   /// Provider project or workspace; `null` means unknown.
-  scopeId       String?
-  model         String
+  scopeId           String?
+  model             String
   /// UTC instants of the provider bucket: start inclusive, end exclusive.
-  periodStart   DateTime @db.Timestamptz(3)
-  periodEnd     DateTime @db.Timestamptz(3)
+  periodStart       DateTime @db.Timestamptz(3)
+  periodEnd         DateTime @db.Timestamptz(3)
   /// 64-bit: one busy day of one model can exceed 2^31 tokens.
-  inputTokens   BigInt
-  outputTokens  BigInt
+  inputTokens       BigInt
+  outputTokens      BigInt
+  /// Part of `inputTokens` read from a prompt cache (M11-04); `null` means not reported.
+  cachedInputTokens BigInt?
+  /// Part of `outputTokens` spent reasoning (M11-04); `null` means not reported.
+  reasoningTokens   BigInt?
   /// `null` when the provider does not report request counts.
-  requests      Int?
+  requests          Int?
   /// Known dimensions only (`serviceTier`...); an absent key is unknown.
-  dimensions    Json     @default("{}")
+  dimensions        Json     @default("{}")
   /// Instant of the synchronisation that last wrote the line.
-  fetchedAt     DateTime @db.Timestamptz(3)
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  fetchedAt         DateTime @db.Timestamptz(3)
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 

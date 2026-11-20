@@ -168,6 +168,8 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
             periodEnd: date,
             inputTokens: 1,
             outputTokens: 1,
+            cachedInputTokens: null,
+            reasoningTokens: null,
             requests: null,
             dimensions: {},
           },
