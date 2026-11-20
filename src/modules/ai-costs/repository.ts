@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import type { Prisma } from "@/generated/prisma/client";
 import { getPrisma } from "@/lib/db";
-import type { AiCostRecord } from "@/modules/integrations/ai-adapter";
+import type { AiCostRecord, AiUsageRecord } from "@/modules/integrations/ai-adapter";
 import { parseDateOnly, toDateOnlyString } from "@/lib/dates";
 import { money, type Currency } from "@/lib/money";
 import {
@@ -1335,6 +1335,58 @@ export async function upsertAiCostLines(
       };
 
       return prisma.aiCostLine.upsert({
+        where: {
+          workspaceId_connectionKey_externalId: {
+            workspaceId,
+            connectionKey: input.connectionKey,
+            externalId: record.externalId,
+          },
+        },
+        create: {
+          workspaceId,
+          connectionKey: input.connectionKey,
+          externalId: record.externalId,
+          ...values,
+        },
+        update: values,
+      });
+    }),
+  );
+
+  return input.records.length;
+}
+
+/**
+ * Imported AI provider usage lines (M11-03), upserted on the same key and for the same
+ * reason as `upsertAiCostLines`: a re-run never adds a duplicate.
+ */
+export async function upsertAiUsageLines(
+  workspaceId: string,
+  input: {
+    connectionKey: string;
+    provider: string;
+    records: readonly AiUsageRecord[];
+    fetchedAt: Date;
+  },
+): Promise<number> {
+  const prisma = getPrisma();
+
+  await prisma.$transaction(
+    input.records.map((record) => {
+      const values = {
+        provider: input.provider,
+        scopeId: record.scopeId,
+        model: record.model,
+        periodStart: record.periodStart,
+        periodEnd: record.periodEnd,
+        inputTokens: BigInt(record.inputTokens),
+        outputTokens: BigInt(record.outputTokens),
+        requests: record.requests,
+        dimensions: { ...record.dimensions },
+        fetchedAt: input.fetchedAt,
+      };
+
+      return prisma.aiUsageLine.upsert({
         where: {
           workspaceId_connectionKey_externalId: {
             workspaceId,

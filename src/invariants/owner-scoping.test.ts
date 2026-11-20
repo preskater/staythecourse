@@ -154,6 +154,27 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
         fetchedAt: date,
       },
     ],
+    upsertAiUsageLines: [
+      OWNER,
+      {
+        connectionKey: "fixture",
+        provider: "ANTHROPIC",
+        records: [
+          {
+            externalId: "fixture",
+            scopeId: null,
+            model: "fixture",
+            periodStart: date,
+            periodEnd: date,
+            inputTokens: 1,
+            outputTokens: 1,
+            requests: null,
+            dimensions: {},
+          },
+        ],
+        fetchedAt: date,
+      },
+    ],
     createCostEntry: [
       OWNER,
       {
