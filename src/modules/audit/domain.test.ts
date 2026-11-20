@@ -130,6 +130,8 @@ describe("AUDIT_ACTIONS", () => {
       "cost.import",
       "cost.allocate",
       "cost.finalize",
+      "cost.invoice_create",
+      "cost.invoice_delete",
       "rate.write",
       "rate.billing_write",
       "rate.internal_write",

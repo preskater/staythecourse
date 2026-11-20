@@ -103,9 +103,14 @@ export default async function AiCostsPage({
         title="Coûts IA"
         description={`Cycle : ${overview.cycleLabel}.`}
         actions={
-          <Link href="/ai-costs/inbox" className="text-sm underline underline-offset-2">
-            Coûts non alloués
-          </Link>
+          <>
+            <Link href="/ai-costs/inbox" className="text-sm underline underline-offset-2">
+              Coûts non alloués
+            </Link>
+            <Link href="/ai-costs/reconciliation" className="text-sm underline underline-offset-2">
+              Rapprochement des factures
+            </Link>
+          </>
         }
       />
 

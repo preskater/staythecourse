@@ -76,7 +76,7 @@ import {
  * rest of the ledger.
  */
 
-const EXCHANGE_RATE_SELECT = {
+export const EXCHANGE_RATE_SELECT = {
   id: true,
   baseCurrency: true,
   quoteCurrency: true,
@@ -90,7 +90,7 @@ const DEFAULT_LIST_SIZE = 100;
 const MAX_LIST_SIZE = 500;
 
 /** Declared structurally, so the mapper does not depend on the generated client type. */
-type ExchangeRateRow = {
+export type ExchangeRateRow = {
   id: string;
   baseCurrency: string;
   quoteCurrency: string;
@@ -107,7 +107,7 @@ type ExchangeRateRow = {
  * unsupported currency or a token-shaped source fails loudly here instead of feeding a
  * conversion with a value the application would never have written.
  */
-function toSnapshot(row: ExchangeRateRow): ExchangeRateSnapshot {
+export function toSnapshot(row: ExchangeRateRow): ExchangeRateSnapshot {
   return createExchangeRateSnapshot({
     id: row.id,
     baseCurrency: row.baseCurrency,

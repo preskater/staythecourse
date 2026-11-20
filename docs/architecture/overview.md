@@ -225,6 +225,22 @@ asked for: a cascade here would silently change what a property is worth.
   (manual entry today, CSV import when M9-05 lands) — there is no live rate feed, and no
   rate is ever inferred. Snapshots are workspace-scoped and are never updated or deleted
   in code.
+- **Invoice reconciliation** (`ProviderInvoice` / `ProviderInvoiceLine`, M11-06,
+  `/ai-costs/reconciliation`) compares three figures per provider period without letting
+  one overwrite another: the estimate (`CostEntry` ESTIMATED with a `PROVIDER` source),
+  the provider-reported cost (`AiCostLine` buckets **starting** inside the invoice's
+  inclusive UTC days) and the invoice, typed by hand as **metadata only** — the document
+  is never stored. The provider sum keeps full precision, is converted with the invoice's
+  own rate snapshot when the currencies differ and is rounded half-up to the cent once;
+  without a snapshot it stays **unknown** ("taux manquant"), never zero. Only `USAGE`
+  lines are compared with it, within the M11-02 tolerance of **0.01**; `CREDIT`,
+  `DISCOUNT`, `TAX` and `FX` lines are classified adjustments, and an `FX` line requires
+  the rate snapshot. `OTHER` lines stay unmatched and keep the invoice in "écart", as
+  does any gap between the total and the sum of its lines (exact to the cent). A month
+  with reported usage and no invoice reads "facture manquante"; an invoice without
+  reported usage reads "usage manquant". Invoices are never updated: a correction is a
+  delete (audited) and a new entry. A manual or CSV estimate names no provider (the
+  ledger's source constraint), so it does not appear in the estimate column.
 - **Imports** are made re-runnable by a unique constraint on
   `(accountId, externalRef)`: replaying an import fails loudly instead of
   duplicating a line. The manual CSV import (page « Importer un CSV », see below) uses
