@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashInvitationToken } from "@/modules/identity/invitations";
 
 /**
@@ -55,6 +55,14 @@ const { acceptInvitationAction, acceptInvitationAsSignedInAction } = await impor
 const TOKEN = "A".repeat(43);
 const TOKEN_HASH = hashInvitationToken(TOKEN);
 const NOW = new Date("2026-11-13T12:00:00Z");
+
+// The actions read the clock: freeze it at NOW, or the fixtures expire with the calendar.
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 const EXPIRES = new Date("2026-11-20T12:00:00Z");
 /** Clearly in the past, because the action reads the real clock. */
 const EXPIRED = new Date("2020-01-01T00:00:00Z");

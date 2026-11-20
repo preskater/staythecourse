@@ -10,7 +10,8 @@ from the application.
 | Secret | Where it lives | What a rotation invalidates |
 | --- | --- | --- |
 | GitHub / GitLab token | Encrypted with AES-256-GCM in `IntegrationConnection.credentialsCiphertext` | Nothing, if replaced correctly: the next synchronisation uses it. |
-| `INTEGRATION_ENCRYPTION_KEY` | `.env` or the deployment secret store | Every stored provider token becomes unreadable. |
+| AI provider key (OpenAI, Anthropic, OpenRouter) | Encrypted with AES-256-GCM in `AiProviderConnection.credentialsCiphertext` | Nothing, if replaced from the page: the new key is tested before it overwrites the old one. |
+| `INTEGRATION_ENCRYPTION_KEY` | `.env` or the deployment secret store | Every stored provider token and AI provider key becomes unreadable. |
 | `AUTH_SECRET` | `.env` or the deployment secret store | Every session (all devices are signed out). |
 | Owner password | bcrypt hash in the `User` row | Every session, including the current one. |
 
@@ -58,6 +59,37 @@ new URL creates a second connection, and the old one remains in the list because
 interface has no delete action yet. Confirm this is acceptable before connecting; the
 old token should be revoked at the old instance, and its snapshots stop updating.
 
+## Replacing or revoking an AI provider key
+
+**Coûts IA → Clés des fournisseurs** (`/ai-costs/connections`), owner or admin only.
+The page shows each key's provider, account, permissions and last test; never the key,
+not even masked.
+
+The keys are organisation-level and can do more than read: an OpenAI admin key, an
+Anthropic Admin API key, an OpenRouter management key. The application only reads with
+them, but treat each as an administrator credential.
+
+1. **Create the replacement key at the provider.** For OpenAI, restrict the admin key
+   to read access on usage and projects; Anthropic and OpenRouter offer no narrower key.
+2. **Paste it** in **Ajouter ou remplacer une clé** with the same **Fournisseur** and
+   choose **Tester et enregistrer**. The key is tested with the provider first: a
+   refused key is not stored, and the previous one stays in place, unchanged.
+3. **Check** that the connection reads **Valide** with a fresh **Dernier test**.
+4. **Revoke the old key in the provider console.** The application never deletes a key
+   at the provider.
+
+**Tester la clé** re-tests a stored key. A refusal (invalid, revoked or missing
+permission) marks it **Refusée**, and no import uses it until a test passes or it is
+replaced; a rate limit or an outage leaves the state as it was.
+
+**Révoquer** (with the confirmation box) erases the stored ciphertext immediately and
+keeps the row, so imported lines keep their connection. It cannot be undone: connect a
+key again to resume imports. If the key leaked, revoke it **at the provider first**, then
+here.
+
+Each connection, replacement, test and revocation is in the **Journal d'audit**, with the
+provider and an error code, never the key.
+
 ## Rotating `INTEGRATION_ENCRYPTION_KEY`
 
 **Mutating for provider tokens.** The key decrypts every stored token. Replacing it
@@ -81,7 +113,9 @@ under the new key while keeping the old key for the others is not supported.
 4. Open **Diagnostic** and confirm **Clé de chiffrement des jetons** is defined and valid
    (32 bytes); an invalid key is reported as an error, never printed.
 5. For **each** connection, replace the token as described above (same provider and
-   instance URL, new or same token value) and run a synchronisation.
+   instance URL, new or same token value) and run a synchronisation. AI provider keys
+   read **Refusée** with « clé enregistrée illisible » after **Tester la clé**: replace
+   each one from `/ai-costs/connections`.
 6. Destroy the old key once every connection has synchronised.
 
 **Rollback:** going back to the old key works only while no token has been re-entered

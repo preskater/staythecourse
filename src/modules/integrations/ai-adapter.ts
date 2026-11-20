@@ -41,7 +41,7 @@ import { parseRetryAfterSeconds, ProviderError } from "./adapter";
  * OpenAI-compatible server...): it has no public API, so its connection must give
  * an `instanceUrl`, like a self-hosted GitLab.
  */
-export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER", "CUSTOM"] as const;
+export const AI_PROVIDERS = ["OPENAI", "ANTHROPIC", "OPENROUTER", "CURSOR", "CUSTOM"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
 export type AiRequest = {
@@ -80,7 +80,8 @@ export type AiAuthResult = {
 export type AiScope = {
   externalId: string;
   name: string;
-  kind: "organization" | "project" | "workspace" | "api_key";
+  /** `member`: a person of a team plan (Cursor), whose spend is attributed to them. */
+  kind: "organization" | "project" | "workspace" | "api_key" | "member";
 };
 
 export type AiDiscovery = {
@@ -97,10 +98,17 @@ export type AiUsageRecord = {
   /** UTC instants of the bucket covered; `periodStart` inclusive, `periodEnd` exclusive. */
   periodStart: Date;
   periodEnd: Date;
+  /** Every input token, cached or not. */
   inputTokens: number;
   outputTokens: number;
+  /** Part of `inputTokens` read from a prompt cache; `null` when the provider does not say. */
+  cachedInputTokens: number | null;
+  /** Part of `outputTokens` spent reasoning; `null` when the provider does not say. */
+  reasoningTokens: number | null;
   /** `null` when the provider does not report request counts. */
   requests: number | null;
+  /** Further provider dimensions (service tier...); an absent key is **unknown**. */
+  dimensions: Readonly<Record<string, string>>;
 };
 
 export type AiCostRecord = {
@@ -126,6 +134,31 @@ export type AiCostRecord = {
 
 export type AiPageStop = "MAX_PAGES" | "RATE_LIMITED" | "NETWORK";
 
+/**
+ * Something the provider reported that could not be imported as authoritative data,
+ * or a known gap in what it reports (M11-03). Shown with the sync run, never dropped
+ * silently. A code and a count only: never a credential, an amount or content.
+ */
+export type AiSyncWarning = {
+  code: string;
+  /** Provider rows concerned; `null` when the warning is about the window, not rows. */
+  count: number | null;
+};
+
+/** Counts warnings by code across pages; a window-level warning has `count: null`. */
+export class AiWarnings {
+  private readonly counts = new Map<string, number | null>();
+
+  add(code: string, rows: number | null = 1): void {
+    const previous = this.counts.get(code);
+    this.counts.set(code, rows === null || previous === null ? null : (previous ?? 0) + rows);
+  }
+
+  list(): AiSyncWarning[] {
+    return [...this.counts].map(([code, count]) => ({ code, count }));
+  }
+}
+
 export type AiPageOutcome<T> = {
   records: T[];
   /** Where to resume; `null` once every page has been read. */
@@ -135,6 +168,8 @@ export type AiPageOutcome<T> = {
   pagesRead: number;
   /** Retry hint when `stoppedBy` is `RATE_LIMITED` and the provider stated one. */
   retryAfterSeconds?: number;
+  /** Absent or empty when the adapter has nothing to flag. */
+  warnings?: AiSyncWarning[];
   fetchedAt: Date;
 };
 
@@ -292,6 +327,9 @@ const isPeriod = (start: unknown, end: unknown): boolean =>
   !Number.isNaN(end.getTime()) &&
   start.getTime() < end.getTime();
 
+const isDimensions = (value: unknown): boolean =>
+  typeof value === "object" && value !== null && Object.values(value).every(isText);
+
 function invalid(what: string): ProviderError {
   return new ProviderError("INVALID_RESPONSE", `${what} incomplet ou invalide.`);
 }
@@ -305,7 +343,10 @@ export function assertUsageRecord(record: Partial<Record<keyof AiUsageRecord, un
     !isPeriod(record.periodStart, record.periodEnd) ||
     !isCount(record.inputTokens) ||
     !isCount(record.outputTokens) ||
-    !(record.requests === null || isCount(record.requests))
+    !(record.requests === null || isCount(record.requests)) ||
+    !(record.cachedInputTokens === null || isCount(record.cachedInputTokens)) ||
+    !(record.reasoningTokens === null || isCount(record.reasoningTokens)) ||
+    !isDimensions(record.dimensions)
   ) {
     throw invalid("Enregistrement d'usage");
   }
@@ -325,9 +366,7 @@ export function assertCostRecord(record: Partial<Record<keyof AiCostRecord, unkn
     !DECIMAL.test(record.amount) ||
     typeof record.currency !== "string" ||
     !CURRENCY.test(record.currency) ||
-    typeof record.dimensions !== "object" ||
-    record.dimensions === null ||
-    !Object.values(record.dimensions).every(isText)
+    !isDimensions(record.dimensions)
   ) {
     throw invalid("Enregistrement de coût");
   }
@@ -337,7 +376,7 @@ export function assertAiScope(scope: Partial<Record<keyof AiScope, unknown>>): v
   if (
     !isText(scope.externalId) ||
     !isText(scope.name) ||
-    !["organization", "project", "workspace", "api_key"].includes(scope.kind as string)
+    !["organization", "project", "workspace", "api_key", "member"].includes(scope.kind as string)
   ) {
     throw invalid("Périmètre");
   }
