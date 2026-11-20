@@ -271,6 +271,7 @@ const MODULES = {
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
   aiCosts: () => import("@/modules/ai-costs/repository"),
+  projectMappings: () => import("@/modules/micro-business/mapping.repository"),
   agents: () => import("@/modules/agents/repository"),
 };
 

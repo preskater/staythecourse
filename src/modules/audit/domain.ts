@@ -44,6 +44,9 @@ export const AUDIT_ACTIONS = [
   // Recurring business expenses (M10-05): definitions, never ledger rows.
   "business_expense.create",
   "business_expense.delete",
+  // Repository-to-project mappings (M14-01): they decide where delivery costs land.
+  "project_mapping.create",
+  "project_mapping.delete",
   // CSV cost import (M9-05): counts and the import identifier, never a row.
   "cost.import",
   // Unallocated-cost inbox (M9-06): bulk actions, counts and the policy version only.
@@ -94,6 +97,7 @@ export const AUDIT_ENTITY_TYPES = [
   "BILLING_RATE",
   "INTERNAL_COST_RATE",
   "BUSINESS_EXPENSE",
+  "PROJECT_MAPPING",
   "COST_IMPORT",
   "COST_ENTRY",
   "MODULE",
