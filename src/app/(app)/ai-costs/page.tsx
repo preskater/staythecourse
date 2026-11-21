@@ -36,7 +36,8 @@ import Decimal from "decimal.js";
 import { AiCostsTabs, resolveAiCostsTab } from "./ai-costs-tabs";
 import { BudgetsSection } from "./budgets-section";
 import { SubscriptionsSection } from "./subscriptions-section";
-import { bookDueRenewals } from "@/modules/ai-costs/subscription.repository";
+import { bookDueRenewals, readForecastInputs } from "@/modules/ai-costs/subscription.repository";
+import { forecastCycle, type CurrencyForecast } from "@/modules/ai-costs/forecast";
 import { ExplorerSection } from "./explorer-section";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,7 @@ export const dynamic = "force-dynamic";
 const STATE_TONES: Record<KpiState, "neutral" | "positive" | "negative" | "warning"> = {
   ok: "positive",
   "no-data": "neutral",
+  insufficient: "warning",
   "not-connected": "warning",
   error: "negative",
 };
@@ -134,6 +136,7 @@ export default async function AiCostsPage({
 
   let ledger: OverviewLedger;
   let budgets: OverviewBudget[] = [];
+  let forecast: CurrencyForecast[] = [];
   try {
     ledger = {
       state: "ok",
@@ -145,13 +148,14 @@ export default async function AiCostsPage({
     const spends = await readAiBudgetSpend(user.workspace.id, workspaceBudgets, cycle.start, cycle.end);
     // The threshold only drives the row state, which the overview does not show.
     budgets = toAiBudgetRows(workspaceBudgets, spends, new Decimal(100));
+    forecast = forecastCycle(await readForecastInputs(user.workspace.id, cycle), cycle);
   } catch (error) {
     // Name only: a database error message can quote amounts or identifiers.
     console.error(`[ai-costs] ${error instanceof Error ? error.name : typeof error}`);
     ledger = { state: "error" };
   }
 
-  const overview = buildAiCostOverview(ledger, cycle, timeZone, budgets);
+  const overview = buildAiCostOverview(ledger, cycle, timeZone, budgets, forecast);
 
   return (
     <>
@@ -217,6 +221,49 @@ export default async function AiCostsPage({
           </tbody>
         </TableShell>
       </Card>
+
+      {overview.forecast.length > 0 ? (
+        <Card title="Prévision fin de mois" description="Estimé, par devise, sans conversion. Hypothèses détaillées.">
+          <TableShell caption="Prévision fin de mois et hypothèses">
+            <thead>
+              <tr>
+                <th scope="col" className={thClass}>Devise</th>
+                <th scope="col" className={`${thClass} text-right`}>Usage à ce jour</th>
+                <th scope="col" className={`${thClass} text-right`}>Taux journalier</th>
+                <th scope="col" className={`${thClass} text-right`}>Jours restants</th>
+                <th scope="col" className={`${thClass} text-right`}>Usage prévu</th>
+                <th scope="col" className={`${thClass} text-right`}>Abonnements</th>
+                <th scope="col" className={`${thClass} text-right`}>Total estimé</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.forecast.map((row) => (
+                <tr key={row.currency}>
+                  <td className={tdClass}>{row.currency}</td>
+                  <td className={`${tdClass} text-right tabular-nums`}>{row.meteredToDate}</td>
+                  <td className={`${tdClass} text-right tabular-nums`}>
+                    {row.dailyRate ?? <StateBadge state="insufficient" />}
+                    <span className="block text-xs text-zinc-500 dark:text-zinc-400">{row.daysWithData} avec usage</span>
+                  </td>
+                  <td className={`${tdClass} text-right tabular-nums`}>{row.remainingDays}</td>
+                  <td className={`${tdClass} text-right tabular-nums`}>{row.meteredForecast ?? "—"}</td>
+                  <td className={`${tdClass} text-right tabular-nums`}>
+                    {row.subscriptions}
+                    {row.upcoming.map((line) => (
+                      <span key={line} className="block text-xs text-zinc-500 dark:text-zinc-400">
+                        à venir : {line}
+                      </span>
+                    ))}
+                  </td>
+                  <td className={`${tdClass} text-right font-semibold tabular-nums`}>
+                    {row.total ? <>≈ {row.total} <Badge tone="warning">Estimé</Badge></> : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </TableShell>
+        </Card>
+      ) : null}
 
       <Card
         title="Dépense par devise et fiabilité"

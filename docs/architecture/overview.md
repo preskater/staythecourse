@@ -1515,6 +1515,15 @@ age is not restorability: that verification is SO-04.
   same provider and currency over the current period beyond the allowance; no metered
   entry reads "no data". Editing a subscription is not supported: cancel and declare a
   new one.
+  The overview's billing-cycle forecast (M12-04, `forecast.ts`) is always labelled
+  estimated, per currency and never converted: metered spend to date + daily rate ×
+  remaining days + subscription renewals booked this cycle + renewals the register
+  schedules before its end. The daily rate is the metered spend of the last 14 days
+  (today included, by entry period start) divided by 14; fewer than 5 days with metered
+  spend in that window reads "insufficient data" and shows no total. Metered usage
+  follows the calendar month for every provider (the ledger has no per-provider invoice
+  cycle); subscriptions renew on their own day, a renewal on the month's last day
+  counting in that month. The forecast card lists every assumption.
   There is no cost entry UI, no import, no provider synchronisation, no exchange-rate conversion and no
   profitability calculation yet. Finalization is per entry, not a separate
   period-closing record: every entry of a period must be finalized to close it.

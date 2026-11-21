@@ -28,6 +28,7 @@ const {
   createAiSubscription,
   InvalidSubscriptionError,
   readCoreFormula,
+  readForecastInputs,
   readSubscriptionMetered,
 } = await import("./subscription.repository");
 
@@ -216,5 +217,30 @@ describe("readers", () => {
       ["USD", "5.00", "0.00", 1],
     ]);
     for (const [args] of costEntry.groupBy.mock.calls) expect(args.where.workspaceId).toBe("ws-1");
+  });
+});
+
+describe("readForecastInputs", () => {
+  it("reads metered days in the window, metered to date and booked renewals, all workspace-scoped", async () => {
+    aiSubscription.findMany.mockResolvedValue([]);
+    costEntry.groupBy
+      .mockResolvedValueOnce([{ periodStart: parseDateOnly("2026-11-18"), currency: "EUR", _sum: { amount: new Decimal("3") } }])
+      .mockResolvedValueOnce([{ currency: "EUR", _sum: { amount: new Decimal("30") } }])
+      .mockResolvedValueOnce([{ currency: "EUR", _sum: { amount: null } }]);
+    const cycle = { start: parseDateOnly("2026-11-01"), end: parseDateOnly("2026-12-01"), today: TODAY };
+
+    const result = await readForecastInputs("ws-1", cycle);
+
+    const [days, toDate, booked] = costEntry.groupBy.mock.calls.map(([args]) => args);
+    expect(days.where).toMatchObject({
+      workspaceId: "ws-1",
+      NOT: { tags: { has: "subscription" } },
+      periodStart: { gte: parseDateOnly("2026-11-06"), lte: TODAY },
+    });
+    expect(toDate.where.periodStart).toEqual({ gte: cycle.start, lte: TODAY });
+    expect(booked.where).toMatchObject({ workspaceId: "ws-1", tags: { has: "subscription" } });
+    expect(result.meteredToDate.get("EUR")?.toFixed(2)).toBe("30.00");
+    expect(result.subscriptionsBooked.get("EUR")?.toFixed(2)).toBe("0.00");
+    expect(result.meteredDays).toHaveLength(1);
   });
 });
