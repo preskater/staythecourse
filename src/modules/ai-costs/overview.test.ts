@@ -96,7 +96,7 @@ describe("buildAiCostOverview", () => {
   it("marks KPIs without a data source as not connected", () => {
     const overview = ok([entry("1.00")]);
 
-    for (const key of ["budget", "forecast", "requests", "tokens", "cache-rate"]) {
+    for (const key of ["requests", "tokens", "cache-rate"]) {
       expect(kpi(overview, key)).toMatchObject({ state: "not-connected", value: null });
     }
     expect(overview.freshness.at(-1)).toMatchObject({
@@ -126,6 +126,50 @@ describe("buildAiCostOverview", () => {
     expect(kpi(overview, "spend")).toMatchObject({ state: "error", value: null });
     expect(overview.spendRows).toEqual([]);
     expect(overview.freshness).toEqual([expect.objectContaining({ state: "error" })]);
+  });
+
+  it("reads spend against the workspace budget, and no budget as no data rather than 0 %", () => {
+    expect(kpi(ok([entry("1.00")]), "budget")).toMatchObject({ state: "no-data", value: null });
+
+    const withBudget = buildAiCostOverview(
+      { state: "ok", entries: [entry("150.00")], sources: [] },
+      cycle,
+      TZ,
+      [{ cap: "200,00 €", spent: "150,00 €", percent: "75,0 %" }],
+    );
+    expect(kpi(withBudget, "budget")).toMatchObject({ state: "ok", value: "75,0 % de 200,00 €" });
+
+    const noSpendInCurrency = buildAiCostOverview(
+      { state: "ok", entries: [entry("1.00")], sources: [] },
+      cycle,
+      TZ,
+      [{ cap: "200,00 $US", spent: null, percent: null }],
+    );
+    expect(kpi(noSpendInCurrency, "budget").state).toBe("no-data");
+
+    expect(kpi(buildAiCostOverview({ state: "error" }, cycle, TZ), "budget").state).toBe("error");
+  });
+
+  it("labels the forecast as estimated, and shows insufficient data without a figure", () => {
+    const base = { meteredToDate: new Decimal("100"), daysWithData: 9, remainingDays: 11, subscriptionsBooked: new Decimal(0), upcoming: [] };
+    const ledger = { state: "ok" as const, entries: [entry("100")], sources: [] };
+
+    expect(kpi(buildAiCostOverview(ledger, cycle, TZ, [], []), "forecast").state).toBe("no-data");
+
+    const insufficient = buildAiCostOverview(ledger, cycle, TZ, [], [
+      { ...base, currency: "EUR", daysWithData: 2, dailyRate: null, meteredForecast: null, total: null },
+    ]);
+    expect(kpi(insufficient, "forecast")).toMatchObject({ state: "insufficient", value: null });
+    expect(insufficient.forecast[0]).toMatchObject({ dailyRate: null, total: null, daysWithData: "2 / 14 j" });
+
+    const estimated = buildAiCostOverview(ledger, cycle, TZ, [], [
+      { ...base, currency: "EUR", dailyRate: new Decimal("5.555"), meteredForecast: new Decimal("161.105"), total: new Decimal("161.105") },
+    ]);
+    expect(kpi(estimated, "forecast")).toMatchObject({ state: "ok", detail: "Estimé" });
+    expect(kpi(estimated, "forecast").value).toContain("≈ 161,11");
+    assertStringsOnly(estimated);
+
+    expect(kpi(buildAiCostOverview({ state: "error" }, cycle, TZ), "forecast").state).toBe("error");
   });
 
   it("measures cycle progress with today included", () => {

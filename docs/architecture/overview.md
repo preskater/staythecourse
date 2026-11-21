@@ -1495,6 +1495,36 @@ age is not restorability: that verification is SO-04.
   per page). It filters on the entry's own dimensions, so its unfiltered total over
   the cycle equals the overview's; allocations are not attributed yet (M9-03), and the
   ledger has no model or API-key column to filter on.
+  The `?tab=budgets` view (M12-03) stores monthly AI caps (`AiBudget`) for the whole
+  workspace or one provider, project, client, developer or agent, each in one
+  currency (never converted). Two alert kinds reuse the alert engine:
+  `AI_BUDGET_THRESHOLD` (preventive, default 80 %) and `AI_BUDGET_OVERRUN`, which takes
+  over past the cap and resolves the threshold episode. A budget with no entry in its
+  scope this month stays quiet. Budget and alert-rule changes are audited
+  (`ai_budget.create`, `ai_budget.delete`, `alert_rules.save`). There is no per-model
+  budget (no model column) and no spend cut-off.
+  The `?tab=subscriptions` view (M12-05) is the subscription register
+  (`AiSubscription`): provider, plan, seats × seat price, cadence (monthly, quarterly,
+  yearly, the recurring forecasts' calendar rules), included allowance, owner and an
+  optional allocation policy (seat, percentage or revenue — the kinds that need no
+  typed measure). Each due renewal is booked once (`AiSubscriptionRenewal`, unique per
+  date) as a DERIVED entry tagged `subscription`, covering the paid period, then split
+  by the policy. Booking runs when the page renders and after a save; it is
+  idempotent. Cancelling stamps `cancelledOn` (first unbilled day) and keeps every
+  booked renewal. The tab shows the core formula per currency: metered usage (entries
+  without the tag) + subscriptions (tagged entries). Overage is metered spend of the
+  same provider and currency over the current period beyond the allowance; no metered
+  entry reads "no data". Editing a subscription is not supported: cancel and declare a
+  new one.
+  The overview's billing-cycle forecast (M12-04, `forecast.ts`) is always labelled
+  estimated, per currency and never converted: metered spend to date + daily rate ×
+  remaining days + subscription renewals booked this cycle + renewals the register
+  schedules before its end. The daily rate is the metered spend of the last 14 days
+  (today included, by entry period start) divided by 14; fewer than 5 days with metered
+  spend in that window reads "insufficient data" and shows no total. Metered usage
+  follows the calendar month for every provider (the ledger has no per-provider invoice
+  cycle); subscriptions renew on their own day, a renewal on the month's last day
+  counting in that month. The forecast card lists every assumption.
   There is no cost entry UI, no import, no provider synchronisation, no exchange-rate conversion and no
   profitability calculation yet. Finalization is per entry, not a separate
   period-closing record: every entry of a period must be finalized to close it.
