@@ -13,6 +13,8 @@ import {
   listBudgets,
   listTransactionsForSeries,
 } from "@/modules/budget/repository";
+import { evaluateAiBudgetOverrun, evaluateAiBudgetThreshold } from "@/modules/ai-costs/budgets";
+import { listAiBudgets, readAiBudgetSpend } from "@/modules/ai-costs/repository";
 import { evaluateStaleIntegration } from "@/modules/integrations/alerts";
 import { listConnections } from "@/modules/integrations/repository";
 import { evaluateOverdueEvent } from "@/modules/real-estate/alerts";
@@ -54,7 +56,7 @@ export async function refreshAlerts(
   const { year, month } = parseMonthKey(monthKey);
   const range = monthRange(year, month);
 
-  const [ruleRows, accounts, balanceTotals, budgets, monthSeries, connections, dueCashflows, existing] =
+  const [ruleRows, accounts, balanceTotals, budgets, monthSeries, connections, dueCashflows, existing, aiBudgets] =
     await Promise.all([
       listAlertRules(workspaceId),
       listAccountsForManagement(workspaceId),
@@ -64,7 +66,11 @@ export async function refreshAlerts(
       listConnections(workspaceId),
       listDueCashflows(workspaceId, { until: now }),
       listAlerts(workspaceId),
+      listAiBudgets(workspaceId),
     ]);
+  // The month the budget rules above use (UTC key); spend follows the overview rule.
+  const aiSpends =
+    aiBudgets.length > 0 ? await readAiBudgetSpend(workspaceId, aiBudgets, range.start, range.end) : [];
 
   const rules = resolveAlertRules(ruleRows);
   const ruleFor = (kind: AlertKind) => rules.find((rule) => rule.kind === kind)!;
@@ -96,6 +102,8 @@ export async function refreshAlerts(
     }),
     ...evaluateStaleIntegration(connections, ruleFor("STALE_INTEGRATION"), { now }),
     ...evaluateOverdueEvent(dueCashflows, ruleFor("OVERDUE_EVENT"), { now }),
+    ...evaluateAiBudgetOverrun(aiBudgets, aiSpends, ruleFor("AI_BUDGET_OVERRUN"), { monthKey }),
+    ...evaluateAiBudgetThreshold(aiBudgets, aiSpends, ruleFor("AI_BUDGET_THRESHOLD"), { monthKey }),
   ];
 
   const plan = planAlertChanges(

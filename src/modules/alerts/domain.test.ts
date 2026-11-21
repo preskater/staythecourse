@@ -220,6 +220,8 @@ const VALID_FORM = {
   unusualExpense: { enabled: true, thresholdAmount: "500", thresholdCurrency: "EUR" },
   staleIntegration: { enabled: true, thresholdDays: "2" },
   overdueEvent: { enabled: true, thresholdDays: "0" },
+  aiBudgetOverrun: { enabled: true, thresholdPercent: "5" },
+  aiBudgetThreshold: { enabled: true, thresholdPercent: "75" },
 };
 
 describe("alertRulesInputSchema", () => {
@@ -243,6 +245,8 @@ describe("alertRulesInputSchema", () => {
       unusualExpense: { enabled: false, thresholdAmount: "", thresholdCurrency: "" },
       staleIntegration: { enabled: true, thresholdDays: "" },
       overdueEvent: { enabled: false, thresholdDays: "" },
+      aiBudgetOverrun: { enabled: false, thresholdPercent: "" },
+      aiBudgetThreshold: { enabled: true, thresholdPercent: "" },
     });
 
     expect(parsed.success).toBe(true);

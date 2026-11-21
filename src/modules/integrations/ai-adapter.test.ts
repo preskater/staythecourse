@@ -95,6 +95,9 @@ function fakeAdapter(provider: AiProvider = "OPENAI", publicBase: string | null 
           inputTokens: row.input as number,
           outputTokens: row.output as number,
           requests: (row.requests as number | undefined) ?? null,
+          cachedInputTokens: null,
+          reasoningTokens: null,
+          dimensions: {},
         }),
         assertUsageRecord,
       ),
@@ -293,6 +296,9 @@ describe("record validation", () => {
     inputTokens: 1,
     outputTokens: 0,
     requests: null,
+    cachedInputTokens: null,
+    reasoningTokens: null,
+    dimensions: {},
   };
   const cost: AiCostRecord = {
     externalId: "c",

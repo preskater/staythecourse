@@ -1,9 +1,9 @@
 import Decimal from "decimal.js";
 import type { Prisma } from "@/generated/prisma/client";
 import { getPrisma } from "@/lib/db";
-import type { AiCostRecord } from "@/modules/integrations/ai-adapter";
+import type { AiCostRecord, AiUsageRecord } from "@/modules/integrations/ai-adapter";
 import { parseDateOnly, toDateOnlyString } from "@/lib/dates";
-import { money, type Currency } from "@/lib/money";
+import { assertCurrency, money, type Currency } from "@/lib/money";
 import {
   assertAllocationConservation,
   assertAllocationSigns,
@@ -54,6 +54,14 @@ import {
   type ExplorerGroupRow,
   type ExplorerOptions,
 } from "./explorer";
+import {
+  aiBudgetDimension,
+  MAX_AI_BUDGETS,
+  type AiBudget,
+  type AiBudgetDimension,
+  type AiBudgetInput,
+  type AiBudgetSpend,
+} from "./budgets";
 import type { OverviewEntryRow, OverviewSourceRow } from "./overview";
 import { costMoney } from "./money";
 import {
@@ -502,7 +510,7 @@ function toCostAllocation(row: CostAllocationRow, currency: Currency): CostAlloc
   };
 }
 
-function entryData(validated: ReturnType<typeof validateCostEntryInput>) {
+export function entryData(validated: ReturnType<typeof validateCostEntryInput>) {
   return {
     amount: validated.amount.amount.toFixed(2),
     currency: validated.amount.currency,
@@ -1196,6 +1204,129 @@ export async function readCostExplorer(
   return { groups, entries, total, page, pageCount };
 }
 
+/**
+ * AI budgets (M12-03), workspace-scoped. A row whose dimension code is unknown (written
+ * by a later version, or by hand) is skipped rather than evaluated on a guess.
+ */
+export async function listAiBudgets(workspaceId: string): Promise<AiBudget[]> {
+  const rows = await getPrisma().aiBudget.findMany({
+    where: { workspaceId },
+    orderBy: [{ dimension: "asc" }, { dimensionValue: "asc" }, { currency: "asc" }],
+    take: MAX_AI_BUDGETS,
+  });
+
+  return rows.flatMap((row) =>
+    aiBudgetDimension(row.dimension)
+      ? [
+          {
+            id: row.id,
+            dimension: row.dimension as AiBudgetDimension,
+            dimensionValue: row.dimensionValue,
+            amount: new Decimal(row.amount.toString()),
+            currency: assertCurrency(row.currency),
+          },
+        ]
+      : [],
+  );
+}
+
+export class AiBudgetLimitError extends Error {
+  constructor() {
+    super(`A workspace holds at most ${MAX_AI_BUDGETS} AI budgets.`);
+    this.name = "AiBudgetLimitError";
+  }
+}
+
+/**
+ * Creates the budget, or replaces the cap of the one with the same scope and currency:
+ * saving the same scope twice never creates a duplicate.
+ */
+export async function upsertAiBudget(
+  workspaceId: string,
+  input: AiBudgetInput,
+): Promise<{ id: string; created: boolean }> {
+  const prisma = getPrisma();
+  const key = {
+    workspaceId,
+    dimension: input.dimension,
+    dimensionValue: input.dimensionValue,
+    currency: input.currency,
+  };
+
+  const existing = await prisma.aiBudget.findUnique({
+    where: { workspaceId_dimension_dimensionValue_currency: key },
+    select: { id: true },
+  });
+  if (existing) {
+    await prisma.aiBudget.update({
+      where: { id: existing.id },
+      data: { amount: input.amount.toFixed(2) },
+    });
+    return { id: existing.id, created: false };
+  }
+
+  if ((await prisma.aiBudget.count({ where: { workspaceId } })) >= MAX_AI_BUDGETS) {
+    throw new AiBudgetLimitError();
+  }
+  const created = await prisma.aiBudget.create({
+    data: { ...key, amount: input.amount.toFixed(2) },
+    select: { id: true },
+  });
+  return { id: created.id, created: true };
+}
+
+/** `false` when the budget is not in this workspace. */
+export async function deleteAiBudget(workspaceId: string, budgetId: string): Promise<boolean> {
+  const { count } = await getPrisma().aiBudget.deleteMany({ where: { id: budgetId, workspaceId } });
+  return count === 1;
+}
+
+/**
+ * Each budget's spend over `[start, end)`, by the overview's rule: entries whose period
+ * starts in the cycle, in the budget's currency, refunds included. One grouped query
+ * per dimension in use; `entryCount: 0` reads "no data", which keeps a rule quiet.
+ */
+export async function readAiBudgetSpend(
+  workspaceId: string,
+  budgets: readonly AiBudget[],
+  start: Date,
+  end: Date,
+): Promise<AiBudgetSpend[]> {
+  const prisma = getPrisma();
+  const where = { workspaceId, periodStart: { gte: start, lt: end } };
+  const dimensions = [...new Set(budgets.map((budget) => budget.dimension))];
+
+  const sums = new Map<string, { spent: Decimal; entryCount: number }>();
+  await Promise.all(
+    dimensions.map(async (code) => {
+      const column = aiBudgetDimension(code)!.column;
+      const groups = (await prisma.costEntry.groupBy({
+        by: column ? [column, "currency"] : ["currency"],
+        where,
+        _sum: { amount: true },
+        _count: { _all: true },
+      })) as unknown as Record<string, unknown>[];
+
+      for (const group of groups) {
+        const value = column ? ((group[column] as string | null) ?? null) : "";
+        if (value === null) continue;
+        sums.set(`${code}|${value}|${group.currency as string}`, {
+          spent: new Decimal(((group._sum as { amount: Decimal.Value | null }).amount ?? 0).toString()),
+          entryCount: (group._count as { _all: number })._all,
+        });
+      }
+    }),
+  );
+
+  return budgets.map((budget) => ({
+    budgetId: budget.id,
+    ...(sums.get(`${budget.dimension}|${budget.dimensionValue}|${budget.currency}`) ?? {
+      spent: new Decimal(0),
+      entryCount: 0,
+    }),
+  }));
+}
+
 /* Unallocated-cost inbox (M9-06). */
 
 export const INBOX_PAGE_SIZE = 200;
@@ -1335,6 +1466,60 @@ export async function upsertAiCostLines(
       };
 
       return prisma.aiCostLine.upsert({
+        where: {
+          workspaceId_connectionKey_externalId: {
+            workspaceId,
+            connectionKey: input.connectionKey,
+            externalId: record.externalId,
+          },
+        },
+        create: {
+          workspaceId,
+          connectionKey: input.connectionKey,
+          externalId: record.externalId,
+          ...values,
+        },
+        update: values,
+      });
+    }),
+  );
+
+  return input.records.length;
+}
+
+/**
+ * Imported AI provider usage lines (M11-03), upserted on the same key and for the same
+ * reason as `upsertAiCostLines`: a re-run never adds a duplicate.
+ */
+export async function upsertAiUsageLines(
+  workspaceId: string,
+  input: {
+    connectionKey: string;
+    provider: string;
+    records: readonly AiUsageRecord[];
+    fetchedAt: Date;
+  },
+): Promise<number> {
+  const prisma = getPrisma();
+
+  await prisma.$transaction(
+    input.records.map((record) => {
+      const values = {
+        provider: input.provider,
+        scopeId: record.scopeId,
+        model: record.model,
+        periodStart: record.periodStart,
+        periodEnd: record.periodEnd,
+        inputTokens: BigInt(record.inputTokens),
+        outputTokens: BigInt(record.outputTokens),
+        cachedInputTokens: record.cachedInputTokens === null ? null : BigInt(record.cachedInputTokens),
+        reasoningTokens: record.reasoningTokens === null ? null : BigInt(record.reasoningTokens),
+        requests: record.requests,
+        dimensions: { ...record.dimensions },
+        fetchedAt: input.fetchedAt,
+      };
+
+      return prisma.aiUsageLine.upsert({
         where: {
           workspaceId_connectionKey_externalId: {
             workspaceId,
