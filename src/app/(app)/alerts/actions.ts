@@ -18,6 +18,7 @@ import {
 } from "@/modules/alerts/domain";
 import { refreshAlerts } from "@/modules/alerts/refresh";
 import { dismissAlert, saveAlertRules } from "@/modules/alerts/repository";
+import { recordAuditEventSafely } from "@/modules/audit/repository";
 
 /**
  * Write Server Actions for the alert engine (BP-05).
@@ -78,6 +79,22 @@ function toRuleConfigs(input: AlertRulesInput): AlertRuleConfig[] {
       thresholdPercent: null,
       thresholdDays: input.overdueEvent.thresholdDays,
     },
+    AI_BUDGET_OVERRUN: {
+      kind: "AI_BUDGET_OVERRUN",
+      enabled: input.aiBudgetOverrun.enabled,
+      thresholdAmount: null,
+      thresholdCurrency: null,
+      thresholdPercent: input.aiBudgetOverrun.thresholdPercent,
+      thresholdDays: null,
+    },
+    AI_BUDGET_THRESHOLD: {
+      kind: "AI_BUDGET_THRESHOLD",
+      enabled: input.aiBudgetThreshold.enabled,
+      thresholdAmount: null,
+      thresholdCurrency: null,
+      thresholdPercent: input.aiBudgetThreshold.thresholdPercent,
+      thresholdDays: null,
+    },
   };
 
   return ALERT_KINDS.map((kind) => configs[kind]);
@@ -127,12 +144,23 @@ export async function saveAlertRulesAction(values: unknown): Promise<ActionResul
     return invalidResult(parsed.error);
   }
 
+  const configs = toRuleConfigs(parsed.data);
   try {
-    await saveAlertRules(user.workspace.id, toRuleConfigs(parsed.data));
+    await saveAlertRules(user.workspace.id, configs);
     await refreshAlerts(user.workspace.id);
   } catch (error) {
     return unexpectedResult("saveAlertRules", error);
   }
+
+  // Which rules are on, never a threshold: the trail records that the watch changed.
+  await recordAuditEventSafely({
+    workspaceId: user.workspace.id,
+    actorId: user.id,
+    action: "alert_rules.save",
+    entityType: "ALERT_RULE",
+    outcome: "SUCCESS",
+    metadata: { enabledCount: configs.filter((rule) => rule.enabled).length },
+  });
 
   revalidatePath("/alerts");
   revalidatePath("/dashboard");

@@ -15,16 +15,26 @@ import { todayDateOnly } from "@/lib/dates";
 import { publicEnv } from "@/lib/env";
 import type { SearchParamsInput } from "@/lib/search-params";
 import { hasModule } from "@/modules/catalog/catalog";
+import { hasPermission } from "@/modules/identity/permissions";
+import { toAiBudgetRows } from "@/modules/ai-costs/budgets";
 import {
   buildAiCostOverview,
   currentBillingCycle,
   KPI_STATE_LABELS,
   type KpiState,
+  type OverviewBudget,
   type OverviewLedger,
 } from "@/modules/ai-costs/overview";
 import { parseExplorerFilters } from "@/modules/ai-costs/explorer";
-import { listExplorerOptions, readAiCostOverviewLedger } from "@/modules/ai-costs/repository";
+import {
+  listAiBudgets,
+  listExplorerOptions,
+  readAiBudgetSpend,
+  readAiCostOverviewLedger,
+} from "@/modules/ai-costs/repository";
+import Decimal from "decimal.js";
 import { AiCostsTabs, resolveAiCostsTab } from "./ai-costs-tabs";
+import { BudgetsSection } from "./budgets-section";
 import { ExplorerSection } from "./explorer-section";
 
 export const dynamic = "force-dynamic";
@@ -41,10 +51,11 @@ function StateBadge({ state }: { state: KpiState }) {
 }
 
 /**
- * « Coûts IA » — read-only overview of the current billing cycle (M12-01) and the
- * multidimensional explorer (M12-02), one `?tab=` each.
+ * « Coûts IA » — overview of the current billing cycle (M12-01), multidimensional
+ * explorer (M12-02) and AI budgets (M12-03), one `?tab=` each.
  *
- * Every member of the workspace reads it; nothing here writes. A KPI without a data
+ * Every member of the workspace reads it; only the budgets tab writes, through its
+ * Server Actions, for members with the write permission. A KPI without a data
  * source shows its state and its definition, never a zero.
  */
 export default async function AiCostsPage({
@@ -83,19 +94,43 @@ export default async function AiCostsPage({
     );
   }
 
+  if (tab === "budgets") {
+    return (
+      <>
+        <PageHeader
+          title="Coûts IA"
+          description="Plafonds mensuels de dépense IA, par périmètre et par devise."
+        />
+        <AiCostsTabs current="budgets" />
+        <BudgetsSection
+          workspaceId={user.workspace.id}
+          canWrite={hasPermission(user.workspace.role, "write")}
+          cycle={cycle}
+        />
+      </>
+    );
+  }
+
   let ledger: OverviewLedger;
+  let budgets: OverviewBudget[] = [];
   try {
     ledger = {
       state: "ok",
       ...(await readAiCostOverviewLedger(user.workspace.id, cycle.start, cycle.end)),
     };
+    const workspaceBudgets = (await listAiBudgets(user.workspace.id)).filter(
+      (budget) => budget.dimension === "workspace",
+    );
+    const spends = await readAiBudgetSpend(user.workspace.id, workspaceBudgets, cycle.start, cycle.end);
+    // The threshold only drives the row state, which the overview does not show.
+    budgets = toAiBudgetRows(workspaceBudgets, spends, new Decimal(100));
   } catch (error) {
     // Name only: a database error message can quote amounts or identifiers.
     console.error(`[ai-costs] ${error instanceof Error ? error.name : typeof error}`);
     ledger = { state: "error" };
   }
 
-  const overview = buildAiCostOverview(ledger, cycle, timeZone);
+  const overview = buildAiCostOverview(ledger, cycle, timeZone, budgets);
 
   return (
     <>

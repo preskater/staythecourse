@@ -167,6 +167,8 @@ enum AlertKind {
   UNUSUAL_EXPENSE
   STALE_INTEGRATION
   OVERDUE_EVENT
+  AI_BUDGET_OVERRUN
+  AI_BUDGET_THRESHOLD
 }
 
 /// The lifecycle of one alert. `DISMISSED` is the owner's choice and sticks while the
@@ -287,6 +289,7 @@ model Workspace {
   auditEvents          AuditEvent[]
   exchangeRates        ExchangeRateSnapshot[]
   costEntries          CostEntry[]
+  aiBudgets            AiBudget[]
   costImportMappings   CostImportMapping[]
   agents               Agent[]
   aiCostLines          AiCostLine[]
@@ -1641,6 +1644,29 @@ model CostEntry {
   @@index([workspaceId, projectId])
   @@index([workspaceId, clientId])
   @@index([workspaceId, repository])
+}
+
+/// A monthly AI spend cap on one dimension of the cost ledger (M12-03).
+///
+/// `dimension` is a code validated in `src/modules/ai-costs/budgets.ts` (`workspace`,
+/// `provider`, `project`, `client`, `developer`, `agent`); `dimensionValue` is the
+/// ledger value it watches, `""` for the whole workspace — never NULL, so the
+/// uniqueness constraint holds (NULL is not comparable in PostgreSQL). The amount is a
+/// cap in its own currency: spend in another currency is never compared nor converted.
+/// The cycle is the calendar month, like the AI cost overview.
+model AiBudget {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  dimension      String
+  dimensionValue String   @default("")
+  amount         Decimal  @db.Decimal(18, 2)
+  currency       String   @db.Char(3)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, dimension, dimensionValue, currency])
 }
 
 /// A split of one entry across dimensions. The unallocated remainder is derived
