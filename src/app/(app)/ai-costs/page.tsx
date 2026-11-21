@@ -138,9 +138,14 @@ export default async function AiCostsPage({
         title="Coûts IA"
         description={`Cycle : ${overview.cycleLabel}.`}
         actions={
-          <Link href="/ai-costs/inbox" className="text-sm underline underline-offset-2">
-            Coûts non alloués
-          </Link>
+          <div className="flex gap-4">
+            <Link href="/ai-costs/inbox" className="text-sm underline underline-offset-2">
+              Coûts non alloués
+            </Link>
+            <Link href="/ai-costs/connections" className="text-sm underline underline-offset-2">
+              Clés des fournisseurs
+            </Link>
+          </div>
         }
       />
 

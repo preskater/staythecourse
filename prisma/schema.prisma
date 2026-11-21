@@ -294,6 +294,7 @@ model Workspace {
   agents               Agent[]
   aiCostLines          AiCostLine[]
   aiUsageLines         AiUsageLine[]
+  aiConnections        AiProviderConnection[]
   allocationPolicies   AllocationPolicy[]
 }
 
@@ -1902,6 +1903,49 @@ model AiCostLine {
 
   @@unique([workspaceId, connectionKey, externalId])
   @@index([workspaceId, connectionKey, periodStart])
+}
+
+/// State of a stored AI provider credential (M11-05).
+enum AiConnectionStatus {
+  /// The last authentication test passed.
+  VALID
+  /// The last authentication test failed: the credential is kept but not trusted.
+  INVALID
+  /// The credential was destroyed here: nothing can be read with it any more.
+  REVOKED
+}
+
+/// One AI provider credential of a workspace (M11-05), separate from the code-hosting
+/// `IntegrationConnection`s. The secret is stored encrypted (AES-256-GCM,
+/// `INTEGRATION_ENCRYPTION_KEY`) and never read back into a response; revoking it
+/// erases the ciphertext and keeps the row, so imported lines keep their connection.
+model AiProviderConnection {
+  id                    String             @id @default(cuid())
+  workspaceId           String
+  /// `AiProvider` code, for example `ANTHROPIC`.
+  provider              String
+  /// Empty string means the provider's public API (see `resolveAiBaseUrl`).
+  instanceUrl           String             @default("")
+  /// `NULL` once revoked.
+  credentialsCiphertext String?
+  /// Display label the provider returned; never the credential.
+  accountLabel          String?
+  /// Permissions the provider reported for the credential, when it reports any.
+  grantedScopes         String[]           @default([])
+  scopesReported        Boolean            @default(false)
+  status                AiConnectionStatus @default(VALID)
+  lastValidatedAt       DateTime?          @db.Timestamptz(3)
+  /// Safe error code of the last failed test, for example `UNAUTHORIZED`.
+  lastValidationError   String?
+  /// Last time a new secret was stored (first connection or rotation).
+  credentialUpdatedAt   DateTime           @db.Timestamptz(3)
+  revokedAt             DateTime?          @db.Timestamptz(3)
+  createdAt             DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider, instanceUrl])
 }
 
 /// Imported AI provider usage lines (M11-03): token and request counts, metadata only.

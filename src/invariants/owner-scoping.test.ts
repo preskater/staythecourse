@@ -300,6 +300,7 @@ const MODULES = {
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
   aiCosts: () => import("@/modules/ai-costs/repository"),
+  aiConnections: () => import("@/modules/ai-costs/connections.repository"),
   agents: () => import("@/modules/agents/repository"),
 };
 

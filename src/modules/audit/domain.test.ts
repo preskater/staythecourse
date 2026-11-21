@@ -146,6 +146,10 @@ describe("AUDIT_ACTIONS", () => {
       "workspace.ownership_transfer",
       "integration.connect",
       "integration.sync",
+      "ai_connection.connect",
+      "ai_connection.rotate",
+      "ai_connection.validate",
+      "ai_connection.revoke",
       "backup.run",
       "restore.run",
     ]);

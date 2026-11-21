@@ -67,6 +67,10 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   "workspace.ownership_transfer": "Propriété transférée",
   "integration.connect": "Connexion d'intégration",
   "integration.sync": "Synchronisation",
+  "ai_connection.connect": "Clé IA connectée",
+  "ai_connection.rotate": "Clé IA remplacée",
+  "ai_connection.validate": "Clé IA testée",
+  "ai_connection.revoke": "Clé IA révoquée",
   "backup.run": "Sauvegarde",
   "restore.run": "Restauration",
 };

@@ -30,6 +30,7 @@ const PAGES: { path: string; moduleKey: ModuleKey; load: () => Promise<{ default
   { path: "/micro-business", moduleKey: "micro-business", load: () => import("./micro-business/page") },
   { path: "/integrations", moduleKey: "development", load: () => import("./integrations/page") },
   { path: "/ai-costs", moduleKey: "ai-costs", load: () => import("./ai-costs/page") },
+  { path: "/ai-costs/connections", moduleKey: "ai-costs", load: () => import("./ai-costs/connections/page") },
 ];
 
 const props = {
