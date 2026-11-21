@@ -56,6 +56,8 @@ export const AUDIT_ACTIONS = [
   "alert_rules.save",
   "ai_budget.create",
   "ai_budget.delete",
+  "ai_subscription.create",
+  "ai_subscription.cancel",
   "module.enable",
   "module.disable",
   // Workspace membership lifecycle (M8-01). The invitation token and the invited
@@ -102,6 +104,7 @@ export const AUDIT_ENTITY_TYPES = [
   "MODULE",
   "ALERT_RULE",
   "AI_BUDGET",
+  "AI_SUBSCRIPTION",
   "INVITATION",
   "INTEGRATION",
   "OPERATION",

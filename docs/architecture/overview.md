@@ -18,7 +18,7 @@ the pages that consume it.
 | `budget` | Accounts, categories, transactions, monthly budgets, budget follow-up, salary simulation, recurring forecasts, financial goals, the savings threshold and monthly aggregation. | `domain.ts`, `totals.ts`, `salary.ts`, `report.ts`, `recurrence.ts`, `goals.ts`, `savings.ts`, `transactions.ts`, `repository.ts` |
 | `real-estate` | Properties, cashflow entries, due dates, the double-counting rule, financing, property events and property indicators. | `domain.ts`, `events.ts`, `kpis.ts`, `repository.ts` |
 | `micro-business` | Clients and projects of a commercial workspace: billing model, status, reference currency, key dates, archive/restore. Revenue documents (invoices, credit notes) and their settling movements (payments, refunds, write-offs), with the derived statement per invoice. | `domain.ts`, `revenue.ts`, `repository.ts` |
-| `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period), their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions, and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). Conservation is exact in cents; finalized entries are immutable. No provider call yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `exchange.ts`, `overview.ts`, `explorer.ts`, `budgets.ts`, `repository.ts` |
+| `ai-costs` | Exact cost entries (amount, currency, mandatory actuality, immutable source reference, billing period), their allocation across project/client/repository/developer/agent/issue/PR/environment/tag dimensions, and frozen exchange-rate snapshots used to normalise an amount into another currency (M9-04). Conservation is exact in cents; finalized entries are immutable. No provider call yet. | `domain.ts`, `actuality.ts`, `source.ts`, `money.ts`, `amount.ts`, `dimensions.ts`, `allocation.ts`, `ledger.ts`, `exchange.ts`, `overview.ts`, `explorer.ts`, `budgets.ts`, `subscriptions.ts`, `subscription.repository.ts`, `repository.ts` |
 | `integrations` | Read-only GitHub and GitLab connections, provider adapters, snapshots, GitHub delivery history (M14-02). | `domain.ts`, `adapter.ts`, `github.ts`, `github-delivery.ts`, `github-delivery.query.ts`, `gitlab.ts`, `repository.ts` |
 | `alerts` | Deterministic warning engine: rule configuration, one bounded evaluation pass, episode lifecycle (fingerprint suppression, dismissal). Rules sit next to their data: `budget/alerts.ts`, `integrations/alerts.ts`, `real-estate/alerts.ts`. | `domain.ts`, `lifecycle.ts`, `refresh.ts`, `repository.ts` |
 | `search` | Global search across the owner's own entities and provider snapshots, one bounded and grouped result set per query. | `domain.ts`, `repository.ts` |
@@ -1502,6 +1502,19 @@ age is not restorability: that verification is SO-04.
   scope this month stays quiet. Budget and alert-rule changes are audited
   (`ai_budget.create`, `ai_budget.delete`, `alert_rules.save`). There is no per-model
   budget (no model column) and no spend cut-off.
+  The `?tab=subscriptions` view (M12-05) is the subscription register
+  (`AiSubscription`): provider, plan, seats × seat price, cadence (monthly, quarterly,
+  yearly, the recurring forecasts' calendar rules), included allowance, owner and an
+  optional allocation policy (seat, percentage or revenue — the kinds that need no
+  typed measure). Each due renewal is booked once (`AiSubscriptionRenewal`, unique per
+  date) as a DERIVED entry tagged `subscription`, covering the paid period, then split
+  by the policy. Booking runs when the page renders and after a save; it is
+  idempotent. Cancelling stamps `cancelledOn` (first unbilled day) and keeps every
+  booked renewal. The tab shows the core formula per currency: metered usage (entries
+  without the tag) + subscriptions (tagged entries). Overage is metered spend of the
+  same provider and currency over the current period beyond the allowance; no metered
+  entry reads "no data". Editing a subscription is not supported: cancel and declare a
+  new one.
   There is no cost entry UI, no import, no provider synchronisation, no exchange-rate conversion and no
   profitability calculation yet. Finalization is per entry, not a separate
   period-closing record: every entry of a period must be finalized to close it.

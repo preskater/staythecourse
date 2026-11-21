@@ -267,6 +267,11 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       date,
       date,
     ],
+    readSubscriptionMetered: [
+      OWNER,
+      [{ id: "fixture", provider: "fixture", currency: "EUR", frequency: "MONTHLY", startDate: date, cancelledOn: null, allowance: new Decimal("1.00") }],
+      new Date("2026-02-01T00:00:00.000Z"),
+    ],
     readCostExplorer: [
       OWNER,
       { dimensions: {}, from: date, to: date, groupBy: "provider", page: 1 },
@@ -300,6 +305,7 @@ const MODULES = {
   identity: () => import("@/modules/identity/repository"),
   integrations: () => import("@/modules/integrations/repository"),
   aiCosts: () => import("@/modules/ai-costs/repository"),
+  aiSubscriptions: () => import("@/modules/ai-costs/subscription.repository"),
   agents: () => import("@/modules/agents/repository"),
 };
 

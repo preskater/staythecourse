@@ -290,6 +290,7 @@ model Workspace {
   exchangeRates        ExchangeRateSnapshot[]
   costEntries          CostEntry[]
   aiBudgets            AiBudget[]
+  aiSubscriptions      AiSubscription[]
   costImportMappings   CostImportMapping[]
   agents               Agent[]
   aiCostLines          AiCostLine[]
@@ -386,8 +387,8 @@ model User {
   auditEvents          AuditEvent[]
   memberships          WorkspaceMember[]
   sessions             Session[]
-  sentInvitations      WorkspaceInvitation[] @relation("InvitationInviter")
-  acceptedInvitations  WorkspaceInvitation[] @relation("InvitationAcceptor")
+  sentInvitations      WorkspaceInvitation[]   @relation("InvitationInviter")
+  acceptedInvitations  WorkspaceInvitation[]   @relation("InvitationAcceptor")
 }
 
 /// One signed-in browser session, persisted so the owner can revoke it.
@@ -1636,8 +1637,9 @@ model CostEntry {
   createdAt        DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime        @updatedAt @db.Timestamptz(3)
 
-  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace   Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   allocations CostAllocation[]
+  renewal     AiSubscriptionRenewal?
 
   @@unique([workspaceId, importKey])
   @@index([workspaceId, periodStart])
@@ -1668,6 +1670,59 @@ model AiBudget {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, dimension, dimensionValue, currency])
+}
+
+/// A recurring AI subscription: a plan with seats, renewed every period (M12-05).
+///
+/// Renewals drive the ledger: each due renewal becomes one `CostEntry` (seats × seat
+/// price, actuality DERIVED, tagged `subscription`), recorded once through
+/// `AiSubscriptionRenewal`, then split by the optional allocation policy (M9-03).
+/// Cancelling stamps `cancelledOn` and stops later renewals; nothing is deleted, so the
+/// renewals already booked keep their history. `allowance` is the usage credit included
+/// each period, in the subscription's currency: metered spend of the same provider
+/// beyond it is the overage. `ownerId` is a developer identifier, like the ledger's.
+model AiSubscription {
+  id                 String              @id @default(cuid())
+  workspaceId        String
+  provider           String
+  plan               String
+  seats              Int
+  seatPrice          Decimal             @db.Decimal(18, 2)
+  currency           String              @db.Char(3)
+  frequency          RecurrenceFrequency @default(MONTHLY)
+  /// First renewal day; later renewals keep its day of month (clamped to short months).
+  startDate          DateTime            @db.Date
+  /// First day no longer billed; `null` while active.
+  cancelledOn        DateTime?           @db.Date
+  allowance          Decimal?            @db.Decimal(18, 2)
+  ownerId            String?
+  allocationPolicyId String?
+  /// The user who declared it: the manual source of its renewal entries.
+  createdBy          String
+  notes              String?
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+
+  workspace        Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  allocationPolicy AllocationPolicy?       @relation(fields: [allocationPolicyId], references: [id], onDelete: SetNull)
+  renewals         AiSubscriptionRenewal[]
+
+  @@index([workspaceId])
+}
+
+/// One renewal already booked in the ledger. The unique pair makes the booking
+/// re-runnable: a renewal date is turned into a cost entry once, whatever the replays.
+model AiSubscriptionRenewal {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  renewalDate    DateTime @db.Date
+  costEntryId    String   @unique
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  subscription AiSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  costEntry    CostEntry      @relation(fields: [costEntryId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, renewalDate])
 }
 
 /// A split of one entry across dimensions. The unallocated remainder is derived
@@ -1737,8 +1792,9 @@ model AllocationPolicy {
   createdAt   DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
 
-  workspace Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  versions  AllocationPolicyVersion[]
+  workspace     Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions      AllocationPolicyVersion[]
+  subscriptions AiSubscription[]
 
   @@unique([workspaceId, name])
 }

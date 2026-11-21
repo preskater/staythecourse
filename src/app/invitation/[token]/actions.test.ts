@@ -55,8 +55,8 @@ const { acceptInvitationAction, acceptInvitationAsSignedInAction } = await impor
 const TOKEN = "A".repeat(43);
 const TOKEN_HASH = hashInvitationToken(TOKEN);
 const NOW = new Date("2026-11-13T12:00:00Z");
-const EXPIRES = new Date("2026-11-20T12:00:00Z");
-/** Clearly in the past, because the action reads the real clock. */
+/** The action reads the real clock, so a pending link must expire relative to it. */
+const EXPIRES = new Date(Date.now() + 24 * 60 * 60 * 1000);
 const EXPIRED = new Date("2020-01-01T00:00:00Z");
 
 const pendingInvitation = {

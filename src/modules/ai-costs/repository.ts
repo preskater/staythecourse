@@ -510,7 +510,7 @@ function toCostAllocation(row: CostAllocationRow, currency: Currency): CostAlloc
   };
 }
 
-function entryData(validated: ReturnType<typeof validateCostEntryInput>) {
+export function entryData(validated: ReturnType<typeof validateCostEntryInput>) {
   return {
     amount: validated.amount.amount.toFixed(2),
     currency: validated.amount.currency,

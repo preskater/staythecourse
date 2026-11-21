@@ -8,6 +8,7 @@ export const AI_COSTS_TABS = [
   { id: "overview", label: "Vue d'ensemble" },
   { id: "explorer", label: "Explorer" },
   { id: "budgets", label: "Budgets" },
+  { id: "subscriptions", label: "Abonnements" },
 ] as const;
 
 export type AiCostsTab = (typeof AI_COSTS_TABS)[number]["id"];
