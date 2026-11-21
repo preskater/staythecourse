@@ -298,6 +298,7 @@ model Workspace {
   costEntries          CostEntry[]
   aiBudgets            AiBudget[]
   aiSubscriptions      AiSubscription[]
+  projectMappings      ProjectMapping[]
   costImportMappings   CostImportMapping[]
   agents               Agent[]
   agentRuns            AgentRun[]
@@ -909,6 +910,7 @@ model Project {
   /// archiving a client keeps its projects linked.
   client           Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
   revenueDocuments RevenueDocument[]
+  mappings         ProjectMapping[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
@@ -1968,6 +1970,38 @@ model AiCostLine {
 
   @@unique([workspaceId, connectionKey, externalId])
   @@index([workspaceId, connectionKey, periodStart])
+}
+
+/// Which part of a repository a mapping selects (M14-01), most specific first.
+enum ProjectMappingSelector {
+  PATH_PREFIX
+  BRANCH
+  LABEL
+  MILESTONE
+  REPOSITORY
+}
+
+/// Ties one selector of one repository to one commercial project (M14-01).
+///
+/// Resolution order and ambiguity rules live in `src/modules/micro-business/mapping.ts`:
+/// an item matched by several projects at the same level goes to review, never to a
+/// guess. `repository` is the provider full name, lowercased; `value` is `""` for a
+/// whole-repository mapping, never NULL, so the unique constraint holds. One selector
+/// maps to one project only.
+model ProjectMapping {
+  id          String                 @id @default(cuid())
+  workspaceId String
+  projectId   String
+  repository  String
+  selector    ProjectMappingSelector
+  value       String                 @default("")
+  createdAt   DateTime               @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, repository, selector, value])
+  @@index([workspaceId, projectId])
 }
 
 /// One execution of an agent version (M13-02). Metadata only: no prompt or

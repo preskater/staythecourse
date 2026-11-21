@@ -90,6 +90,8 @@ export type ClientModules = {
   "src/app/(app)/micro-business/rates/internal-rate-form.tsx": typeof import("@/app/(app)/micro-business/rates/internal-rate-form");
   "src/app/(app)/micro-business/expenses/delete-expense-button.tsx": typeof import("@/app/(app)/micro-business/expenses/delete-expense-button");
   "src/app/(app)/micro-business/expenses/expense-form.tsx": typeof import("@/app/(app)/micro-business/expenses/expense-form");
+  "src/app/(app)/micro-business/mapping/delete-mapping-button.tsx": typeof import("@/app/(app)/micro-business/mapping/delete-mapping-button");
+  "src/app/(app)/micro-business/mapping/mapping-form.tsx": typeof import("@/app/(app)/micro-business/mapping/mapping-form");
   "src/app/(app)/modules/module-toggle.tsx": typeof import("@/app/(app)/modules/module-toggle");
   "src/app/(app)/real-estate/cashflow-form.tsx": typeof import("@/app/(app)/real-estate/cashflow-form");
   "src/app/(app)/real-estate/delete-event-button.tsx": typeof import("@/app/(app)/real-estate/delete-event-button");

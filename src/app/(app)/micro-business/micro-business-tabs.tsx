@@ -11,6 +11,7 @@ export const MICRO_BUSINESS_TABS = [
   { href: "/micro-business/revenue", label: "Revenus" },
   { href: "/micro-business/rates", label: "Tarifs" },
   { href: "/micro-business/expenses", label: "Charges" },
+  { href: "/micro-business/mapping", label: "Dépôts" },
 ] as const;
 
 export type MicroBusinessTab = (typeof MICRO_BUSINESS_TABS)[number]["href"];
