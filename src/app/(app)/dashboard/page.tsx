@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ActionMenu, type ActionMenuGroup } from "@/components/action-menu";
 import {
 	Badge,
 	Card,
@@ -39,9 +40,45 @@ export default async function DashboardPage() {
 		budgetActive ? listLabelHistory(user.workspace.id) : [],
 	]);
 
-	const { alerts, budget, budgetTracking, realEstate, integrations, monthKey, monthLabel } =
+	const { alerts, budget, budgetTracking, realEstate, integrations, aiCosts, monthKey, monthLabel } =
 		overview;
-	const noModule = !budget && !realEstate && !integrations;
+	const noModule = !budget && !realEstate && !integrations && !aiCosts;
+
+	// The header keeps one primary gesture and one menu: three side-by-side buttons
+	// wrapped onto two rows and read like a toolbar rather than a page title.
+	const exportActions: ActionMenuGroup[] = [
+		{
+			label: "Exporter",
+			items: [
+				...(budget
+					? [
+							{
+								href: "/api/export/transactions",
+								label: "Transactions (CSV)",
+								hint: `Opérations de ${monthLabel}`,
+								download: true,
+							},
+						]
+					: []),
+				{
+					href: "/api/export/summary",
+					label: "Synthèse de situation (.md)",
+					hint: "Document complet, lisible par un assistant",
+					download: true,
+				},
+				...(budget
+					? [
+							{
+								href: "/api/export/summary?scope=finance",
+								label: "Situation financière seule (.md)",
+								hint: "Budget uniquement",
+								download: true,
+							},
+						]
+					: []),
+			],
+		},
+	];
 
 	return (
 		<>
@@ -49,22 +86,19 @@ export default async function DashboardPage() {
 				title="Tableau de bord"
 				description={`Indicateurs de ${monthLabel}. Chaque total est calculé à partir des opérations enregistrées.`}
 				actions={
-					budget ? (
+					noModule ? null : (
 						<>
-							<Link
-								href="/budget"
-								className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-							>
-								Saisir une opération
-							</Link>
-							<Link
-								href="/api/export/transactions"
-								className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-							>
-								Exporter les transactions (CSV)
-							</Link>
+							{budget ? (
+								<Link
+									href="/budget"
+									className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+								>
+									Saisir une opération
+								</Link>
+							) : null}
+							<ActionMenu label="Actions" groups={exportActions} />
 						</>
-					) : null
+					)
 				}
 			/>
 
@@ -288,6 +322,36 @@ export default async function DashboardPage() {
 			) : null}
 
 			<div className="grid gap-4 lg:grid-cols-2">
+				{aiCosts ? (
+					<Card
+						title="Coûts non répartis"
+						description="Part des coûts qu'aucun projet, client ou dépôt ne porte encore, par devise, sans conversion."
+					>
+						{aiCosts.length === 0 ? (
+							<p className="text-sm text-zinc-700 dark:text-zinc-300">
+								Aucun coût enregistré : il n&apos;y a rien à répartir.
+							</p>
+						) : (
+							<div className="flex flex-col gap-3">
+								<div className="grid gap-3 sm:grid-cols-2">
+									{aiCosts.map((summary) => (
+										<StatCard
+											key={summary.currency}
+											label={`Pas encore réparti (${summary.currency})`}
+											value={formatMoney({ amount: summary.unallocated, currency: summary.currency })}
+											tone={summary.unallocated.isZero() ? "positive" : "negative"}
+											hint={`Sur ${formatMoney({ amount: summary.total, currency: summary.currency })} de coûts · ${summary.draftCount} à revoir`}
+										/>
+									))}
+								</div>
+								<Link href="/ai-costs/inbox" className="text-sm underline underline-offset-2">
+									Ouvrir la boîte de réception des coûts
+								</Link>
+							</div>
+						)}
+					</Card>
+				) : null}
+
 				{realEstate ? (
 					<Card title="Immobilier" description="Biens suivis et flux rattachés.">
 						{realEstate.propertyCount === 0 ? (
@@ -371,6 +435,33 @@ export default async function DashboardPage() {
 					</Card>
 				) : null}
 			</div>
+
+			{noModule ? null : (
+				<Card
+					title="Synthèse de situation"
+					description="Un document Markdown unique — comptes, réalisé, budgets, séries récurrentes, prévisions, salaire simulé, échéancier des mois à venir, épargne, objectifs, immobilier, micro-entreprise, intégrations et alertes — lisible tel quel ou transmissible à un assistant. Il ne contient aucune recommandation et ne lit que les données enregistrées ici."
+				>
+					<div className="flex flex-col gap-3">
+						<div>
+							<a
+								href="/api/export/summary"
+								download
+								className="inline-flex rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+							>
+								Télécharger la synthèse (.md)
+							</a>
+						</div>
+						<p className="text-xs text-zinc-500 dark:text-zinc-400">
+							Le document cite son mois de référence et son horizon (6 mois par défaut), indique
+							les sections absentes — module inactif ou périmètre réduit — et distingue
+							« inconnu » d&apos;un zéro. Un bloc « Comment lire ce document » fixe les
+							conventions de signes, de devises et de dates. Le fichier est généré à la demande
+							et l&apos;export est inscrit au journal d&apos;audit. Le périmètre
+							« finances seules » est disponible depuis le menu Actions.
+						</p>
+					</div>
+				</Card>
+			)}
 		</>
 	);
 }

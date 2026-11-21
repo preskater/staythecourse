@@ -1,7 +1,7 @@
 import { getPrisma } from "@/lib/db";
 import { decodeEncryptionKey, decryptSecret, encryptSecret } from "@/lib/crypto";
 import { getServerEnv } from "@/lib/env";
-import type { ResourceCheck, CiRepositoryResult } from "./adapter";
+import type { ResourceCheck, CiRepositoryResult, DeliveryRepositoryResult } from "./adapter";
 import { CACHE_MAX_AGE_DAYS, type CacheEntryLike } from "./cache";
 import {
   describeInstance,
@@ -1029,4 +1029,161 @@ export async function pruneSyncRuns(input: {
   });
 
   return deleted.count;
+}
+
+/* Delivery history (M14-02). */
+
+/**
+ * Stores the delivery data of the repositories read this run. Idempotent: pull
+ * requests, releases and deployments are keyed by `(connection, externalId)`, and a
+ * pull request's children are replaced together with it in one transaction, so a
+ * re-sync never duplicates a file, review, commit or link. Nothing is pruned here:
+ * this is history, bounded by `pruneDeliveryHistory`. A refused repository writes
+ * nothing, so its earlier history stays as it was.
+ */
+export async function saveDelivery(input: {
+  connectionId: string;
+  provider: IntegrationProvider;
+  results: readonly DeliveryRepositoryResult[];
+  fetchedAt: Date;
+}): Promise<{ created: number; updated: number }> {
+  const prisma = getPrisma();
+  const read = input.results.filter(
+    (result): result is Extract<DeliveryRepositoryResult, { read: true }> => result.read,
+  );
+  const ids = (key: "pullRequests" | "releases" | "deployments") =>
+    read.flatMap((result) => result[key].map((item) => item.externalId));
+
+  const [knownPullRequests, knownReleases, knownDeployments] = await Promise.all([
+    prisma.pullRequestSnapshot.findMany({
+      where: { connectionId: input.connectionId, externalId: { in: ids("pullRequests") } },
+      select: { externalId: true },
+    }),
+    prisma.releaseSnapshot.findMany({
+      where: { connectionId: input.connectionId, externalId: { in: ids("releases") } },
+      select: { externalId: true },
+    }),
+    prisma.deploymentSnapshot.findMany({
+      where: { connectionId: input.connectionId, externalId: { in: ids("deployments") } },
+      select: { externalId: true },
+    }),
+  ]);
+  const known = new Set(
+    [...knownPullRequests, ...knownReleases, ...knownDeployments].map((row) => row.externalId),
+  );
+  let created = 0;
+  let saved = 0;
+  const tally = (externalId: string) => {
+    saved += 1;
+    if (!known.has(externalId)) created += 1;
+  };
+
+  for (const result of read) {
+    for (const pr of result.pullRequests) {
+      tally(pr.externalId);
+      const data = {
+        provider: input.provider,
+        repository: pr.repository,
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        authorLogin: pr.authorLogin,
+        state: pr.state,
+        isDraft: pr.isDraft,
+        baseBranch: pr.baseBranch,
+        headBranch: pr.headBranch,
+        additions: pr.additions,
+        deletions: pr.deletions,
+        changedFiles: pr.changedFiles,
+        commitsCount: pr.commitsCount,
+        commentsCount: pr.commentsCount,
+        reviewsCount: pr.reviewsCount,
+        openedAt: pr.openedAt,
+        closedAt: pr.closedAt,
+        mergedAt: pr.mergedAt,
+        firstReviewAt: firstInstant(pr.reviews.map((review) => review.submittedAt)),
+        providerUpdatedAt: pr.updatedAt,
+        childrenTruncated: pr.childrenTruncated,
+        fetchedAt: input.fetchedAt,
+      };
+
+      await prisma.$transaction(async (tx) => {
+        const row = await tx.pullRequestSnapshot.upsert({
+          where: { connectionId_externalId: { connectionId: input.connectionId, externalId: pr.externalId } },
+          create: { connectionId: input.connectionId, externalId: pr.externalId, ...data },
+          update: data,
+          select: { id: true },
+        });
+        const pullRequestId = row.id;
+
+        await tx.pullRequestFile.deleteMany({ where: { pullRequestId } });
+        await tx.pullRequestReview.deleteMany({ where: { pullRequestId } });
+        await tx.pullRequestCommit.deleteMany({ where: { pullRequestId } });
+        await tx.pullRequestIssueLink.deleteMany({ where: { pullRequestId } });
+        await tx.pullRequestFile.createMany({
+          data: pr.files.map((file) => ({ pullRequestId, ...file })),
+          skipDuplicates: true,
+        });
+        await tx.pullRequestReview.createMany({
+          data: pr.reviews.map((review) => ({ pullRequestId, ...review })),
+          skipDuplicates: true,
+        });
+        await tx.pullRequestCommit.createMany({
+          data: pr.commits.map((commit) => ({ pullRequestId, ...commit })),
+          skipDuplicates: true,
+        });
+        await tx.pullRequestIssueLink.createMany({
+          data: pr.issueLinks.map((link) => ({ pullRequestId, ...link })),
+          skipDuplicates: true,
+        });
+      });
+    }
+
+    for (const release of result.releases) {
+      tally(release.externalId);
+      const { externalId, ...data } = release;
+      await prisma.releaseSnapshot.upsert({
+        where: { connectionId_externalId: { connectionId: input.connectionId, externalId } },
+        create: { connectionId: input.connectionId, externalId, provider: input.provider, ...data, fetchedAt: input.fetchedAt },
+        update: { ...data, fetchedAt: input.fetchedAt },
+      });
+    }
+
+    for (const deployment of result.deployments) {
+      tally(deployment.externalId);
+      const { externalId, ...data } = deployment;
+      await prisma.deploymentSnapshot.upsert({
+        where: { connectionId_externalId: { connectionId: input.connectionId, externalId } },
+        create: { connectionId: input.connectionId, externalId, provider: input.provider, ...data, fetchedAt: input.fetchedAt },
+        update: { ...data, fetchedAt: input.fetchedAt },
+      });
+    }
+  }
+
+  return { created, updated: saved - created };
+}
+
+function firstInstant(values: readonly (Date | null)[]): Date | null {
+  const times = values.filter((value): value is Date => value !== null).map((value) => value.getTime());
+  return times.length === 0 ? null : new Date(Math.min(...times));
+}
+
+/**
+ * Deletes delivery history older than the cutoff, workspace by workspace: pull
+ * requests by their last provider update (children cascade), releases and
+ * deployments by their creation. Bounded by the cutoff and safe to re-run.
+ */
+export async function pruneDeliveryHistory(input: {
+  workspaceId: string;
+  olderThan: Date;
+}): Promise<number> {
+  const prisma = getPrisma();
+  const connection = { workspaceId: input.workspaceId };
+  const [pullRequests, releases, deployments] = await Promise.all([
+    prisma.pullRequestSnapshot.deleteMany({ where: { connection, providerUpdatedAt: { lt: input.olderThan } } }),
+    prisma.releaseSnapshot.deleteMany({ where: { connection, releasedAt: { lt: input.olderThan } } }),
+    prisma.deploymentSnapshot.deleteMany({ where: { connection, deployedAt: { lt: input.olderThan } } }),
+  ]);
+
+  return pullRequests.count + releases.count + deployments.count;
 }

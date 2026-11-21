@@ -83,6 +83,11 @@ const NOT_OWNER_SCOPED: Record<string, string> = {
   "identity.countOwners": "single-owner bootstrap check",
   "identity.upsertOwner": "seed script, keyed by email",
   "identity.ensureDefaultWorkspace": "workspace id derived from the owner id; membership keyed by userId",
+  // Invitation acceptance is authorised by the bearer token, not by a session scope:
+  // the lookup by digest is the check, and the writes are keyed by the row it returned.
+  "identity.findWorkspaceInvitationByTokenHash": "bearer-token lookup; the token is the secret",
+  "identity.acceptWorkspaceInvitation": "keyed by the invitation resolved from the bearer token",
+  "identity.registerAndAcceptWorkspaceInvitation": "keyed by the invitation resolved from the bearer token",
   // Synchronisation writes run after `findConnectionForSync(userId, id)`, keyed by the
   // connection or run that check returned.
   "integrations.saveSnapshots": "keyed by an owner-checked connection",
@@ -95,6 +100,7 @@ const NOT_OWNER_SCOPED: Record<string, string> = {
   "integrations.listCacheEntries": "keyed by an owner-checked connection (DA-04 cache)",
   "integrations.saveCacheChecks": "keyed by an owner-checked connection (DA-04 cache)",
   "integrations.saveCiRuns": "keyed by an owner-checked connection (DA-03 CI)",
+  "integrations.saveDelivery": "keyed by an owner-checked connection (M14-02 delivery)",
   // Rows already resolved for the owner by the calling action.
   "budget.createImportedTransactions": "rows carry the owner id, validated by the import action",
   "realEstate.createCashflow": "keyed by a property the action found with findProperty(userId, id)",
@@ -128,6 +134,49 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
     ],
     saveAlertRules: [OWNER, [{ kind: "fixture", enabled: true }]],
     listCostEntries: [OWNER, {}],
+    upsertAiCostLines: [
+      OWNER,
+      {
+        connectionKey: "fixture",
+        provider: "OPENAI",
+        records: [
+          {
+            externalId: "fixture",
+            scopeId: null,
+            model: null,
+            periodStart: date,
+            periodEnd: date,
+            amount: "12.34",
+            currency: "USD",
+            dimensions: {},
+          },
+        ],
+        fetchedAt: date,
+      },
+    ],
+    upsertAiUsageLines: [
+      OWNER,
+      {
+        connectionKey: "fixture",
+        provider: "ANTHROPIC",
+        records: [
+          {
+            externalId: "fixture",
+            scopeId: null,
+            model: "fixture",
+            periodStart: date,
+            periodEnd: date,
+            inputTokens: 1,
+            outputTokens: 1,
+            cachedInputTokens: null,
+            reasoningTokens: null,
+            requests: null,
+            dimensions: {},
+          },
+        ],
+        fetchedAt: date,
+      },
+    ],
     createCostEntry: [
       OWNER,
       {
@@ -168,6 +217,36 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       "fixture",
       { amount: new Decimal("1.00"), dimensions: { projectId: "fixture" } },
     ],
+    createImportedCostEntries: [
+      OWNER,
+      [
+        {
+          importKey: "fixture",
+          input: {
+            amount: "12.34",
+            currency: "EUR",
+            actuality: "observed",
+            source: { kind: "import", importId: "fixture", rowNumber: 2, capturedAt: date },
+            periodStart: date,
+            periodEnd: date,
+            notes: "fixture",
+          },
+        },
+      ],
+    ],
+    createAgent: [
+      OWNER,
+      {
+        name: "fixture",
+        config: { modelPolicy: { primary: { provider: "p", model: "m" } }, ownerId: "fixture" },
+      },
+    ],
+    updateAgentConfig: [
+      OWNER,
+      "fixture",
+      { modelPolicy: { primary: { provider: "p", model: "m" } }, ownerId: "fixture" },
+    ],
+    updateAgentDetails: [OWNER, "fixture", { status: "PAUSED" }],
     recordExchangeRate: [
       {
         workspaceId: OWNER,
@@ -228,6 +307,7 @@ const MODULES = {
   integrations: () => import("@/modules/integrations/repository"),
   aiCosts: () => import("@/modules/ai-costs/repository"),
   aiSubscriptions: () => import("@/modules/ai-costs/subscription.repository"),
+  agents: () => import("@/modules/agents/repository"),
 };
 
 async function firstQueriesOf(fn: (...args: unknown[]) => unknown, name: string) {

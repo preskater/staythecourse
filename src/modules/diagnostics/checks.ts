@@ -1,6 +1,7 @@
 import { decodeEncryptionKey } from "@/lib/crypto";
 import { serverEnvSchema } from "@/lib/env";
 import type { ConnectionSummary } from "@/modules/integrations/domain";
+import { plural } from "@/lib/word";
 
 /**
  * System diagnostics (SO-03): pure checks, one per operational question.
@@ -37,10 +38,6 @@ function check(
   action: string | null = null,
 ): DiagnosticCheck {
   return { id, label, status, message, action };
-}
-
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count > 1 ? "s" : ""}`;
 }
 
 /** `reachable` comes from a `SELECT 1` bounded by a timeout. */

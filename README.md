@@ -14,11 +14,16 @@ provider adapters) is implemented.
 
 Working today:
 
-- Owner authentication (Auth.js credentials, no public sign-up), with a **Compte**
-  page to change the owner password.
+- Authentication (Auth.js credentials, no public sign-up: the seed creates the first
+  account, a single-use invitation creates the others), with a **Compte** page to
+  change your own password.
 - Workspace roles (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`) enforced server-side: a
   viewer can read but cannot write or export, an admin can manage members and modules
   but can never remove or demote the owner.
+- Household members (`/members`, owner and admin only): invite an address with a role
+  through a single-use 7-day link shown once (no e-mail is sent), revoke it, remove a
+  member, change a role, or transfer ownership explicitly. The owner can never be
+  removed or demoted silently. Every lifecycle event is audited.
 - Personal budget: accounts, categories, transactions entered from the budget
   page, monthly totals per currency, filters, CSV export, deletion with confirmation,
   correction of an existing operation and two charts (a 12-month trend and the month's
@@ -113,11 +118,34 @@ Working today:
   silently exporting another period. Every delivered file writes one audit entry (scope,
   bounds, row count, truncation); a file whose entry cannot be written is withheld. An
   unknown value exports as an empty cell with its reason, never as a zero.
+- Situation summary (`/api/export/summary`, behind the header's **Actions** menu on the
+  dashboard and on the budget page — where it is scoped to the budget — plus a dedicated
+  dashboard card): one Markdown document that describes the whole situation in one file,
+  written to be read by a person **or handed to an assistant**. It opens with metadata
+  (reference month, horizon, currency, active modules), a "Comment lire ce document"
+  block fixing the conventions — exact decimals with a point, no currency conversion,
+  signed amounts except the positive magnitudes of the realized tables, unknown ≠ zero,
+  calendar days vs ISO instants, planned vs recorded — then a table of every section
+  stating whether it is included, empty or absent (and why), then the sections: accounts
+  and recorded balances, the reference month's actuals and budget tracking, recurring
+  series, the month's forecast with its undecided movements, the simulated *and* booked
+  salary per month, a projected end-of-month balance for the coming months, the savings
+  cushion, goals, properties, loans, unsettled property due dates, micro-business
+  projects and outstanding invoices, integration state and active alerts.
+  `?scope=finance` narrows the document to the budget module (its sections, and only the
+  alerts whose rule reads it), `?month=YYYY-MM` moves the
+  reference month and `?horizon=1..12` sets how many months the schedule covers; an
+  unknown scope or an out-of-range horizon answers 400 before any read. The document is
+  **read-only**: it never materialises occurrences, recomputing them from the series the
+  same way the Prévisions tab would, and every delivered file writes one `export.summary`
+  audit entry — a file whose entry cannot be written is withheld.
 - Audit trail (`/audit`): append-only and workspace-scoped entries for sign-in and
   refusals, sign-out, session revocations, password changes,
   transaction creation/edition/deletion/transfer/
-  reconciliation/salary booking, salary-rate changes, module toggles, provider
-  connections and synchronisations, exports, and operator backup/restore. Rows carry a
+  reconciliation/salary booking, salary-rate changes, module toggles, invitations and
+  membership changes (invite, accept, revoke, remove, role change, ownership
+  transfer), provider connections and synchronisations, exports, and operator
+  backup/restore. Rows carry a
   timestamp, an action code, an entity reference, an outcome and safe metadata (counts,
   codes, calendar days) — never a label, an amount, a token or a password. Every writer
   goes through one server helper; nothing exposes an update or a delete, and the only
@@ -246,7 +274,7 @@ cp .env.example .env
 # 3. Start PostgreSQL and prepare the database
 docker compose up -d --wait db
 npm run db:migrate
-npm run db:seed          # creates the owner from SEED_OWNER_* variables
+npm run db:seed          # creates the owner and their personal workspace from SEED_* variables
 
 # 4. Run
 npm run dev              # http://localhost:3000
@@ -264,10 +292,10 @@ docker compose --profile full up -d --build
 ```
 
 The `migrate` service applies pending migrations, then the `seed` service creates
-the owner account from `SEED_OWNER_*`, or refreshes the name of the one that exists.
-Both exit; `app` starts only once they succeeded, so a failed migration or a missing
-account never boots a server. Inspect them with
-`docker compose --profile full logs migrate seed`.
+the owner account from `SEED_OWNER_*`, or refreshes the name of the one that exists,
+together with their personal workspace and its initial modules. Both exit; `app`
+starts only once they succeeded, so a failed migration or a missing account never
+boots a server. Inspect them with `docker compose --profile full logs migrate seed`.
 
 The seed is idempotent and runs on every `up`. It writes `SEED_OWNER_PASSWORD` when
 it creates the account, then leaves the stored hash alone: a password changed from
@@ -276,6 +304,13 @@ which is also how a forgotten password is replaced — set
 `SEED_OWNER_FORCE_PASSWORD=true` and run `up -d` again, or run that step alone with
 `docker compose --profile full run --rm seed`. The seed prints which of the two it
 did.
+
+`SEED_WORKSPACE_MODULES` chooses the modules enabled in the personal workspace on
+first seed (default `budget,real-estate,development`, see the keys in
+[`src/modules/catalog/catalog.ts`](src/modules/catalog/catalog.ts)). The seed only
+adds missing module rows: a module the owner disabled from `/modules` stays disabled,
+and an existing deployment needs no re-seed. `npm run db:verify-seed` checks the rows
+a fresh seed must produce, including that a second run created no duplicate.
 
 Without a profile, `docker compose up -d` starts PostgreSQL only.
 
@@ -411,8 +446,9 @@ the fictitious values. The ones that matter most:
 | `INTEGRATION_ENCRYPTION_KEY` | AES-256-GCM key protecting provider tokens at rest: 32 bytes, base64 encoded. |
 | `AUTH_URL` | The public origin, needed behind the proxy. It must equal the address you browse — see [The proxy and the address you browse](#the-proxy-and-the-address-you-browse). |
 | `AUTH_TRUST_HOST` | Auth.js host trust; the compose stack sets `true`. |
-| `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`, `SEED_OWNER_NAME` | Create the single owner account. There is no public sign-up. |
+| `SEED_OWNER_EMAIL`, `SEED_OWNER_PASSWORD`, `SEED_OWNER_NAME` | Create the initial account. Other accounts join through an invitation; there is no public sign-up. |
 | `SEED_OWNER_FORCE_PASSWORD` | `true` overwrites the stored hash with `SEED_OWNER_PASSWORD`; left unset, a password changed from the Compte page is kept. |
+| `SEED_WORKSPACE_MODULES` | Comma-separated module keys enabled in the personal workspace on first seed (`budget,real-estate,development` by default). Missing prerequisites are refused. |
 | `NEXT_PUBLIC_DEFAULT_CURRENCY`, `NEXT_PUBLIC_DEFAULT_TIME_ZONE` | Interface defaults (`EUR`, `Europe/Paris`); the only variables shipped to the browser. |
 | `APP_BIND_HOST`, `APP_PORT` | Host interface and port published by the Compose application (`0.0.0.0:3000` by default). Use `APP_BIND_HOST=127.0.0.1` for local-only access. |
 | `APP_HOST`, `PROXY_PORT` | Address and host port served by the proxy when that proxy is enabled. |
@@ -436,7 +472,8 @@ secret must never be added to that block.
 | `npm run db:generate` | Generate the Prisma client into `src/generated/prisma` (required before typecheck, tests or build) |
 | `npm run db:migrate` | Create and apply a migration (development) |
 | `npm run db:deploy` | Apply pending migrations (deployment) |
-| `npm run db:seed` | Create the owner account, or refresh its name (the stored password is kept) |
+| `npm run db:seed` | Create the owner, their personal workspace and initial modules, or refresh the owner name (the stored password is kept) |
+| `npm run db:verify-seed` | Check a fresh or throwaway database has one owner, one personal `OWNER` workspace and the selected modules, after running the seed twice |
 | `npm run db:cleanup` | Delete synchronisation runs older than 90 days (keeps the latest success per connection) and audit events older than 365 days |
 | `npm run audit:operation -- backup.run SUCCESS` | Record an operator backup/restore in the audit trail |
 | `npm run db:studio` | Browse the database |
@@ -548,7 +585,8 @@ repository's own scripts and fictitious values only.
   internals are in `infra/backups/README.md`.
 - Apply migrations and create the owner before the application starts: the
   `migrate` and `seed` services do both, or run them alone with
-  `docker compose --profile full run --rm migrate` / `run --rm seed`.
+  `docker compose --profile full run --rm migrate` / `run --rm seed`. The seed also
+  creates the personal workspace and its initial module set.
 - `SEED_OWNER_PASSWORD` is written when the seed creates the account, or when
   `SEED_OWNER_FORCE_PASSWORD=true`: a password changed from the Compte page survives
   a restart or a redeploy. Keep the value out of the image; rotate it by editing

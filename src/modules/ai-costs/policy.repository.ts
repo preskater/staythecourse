@@ -15,6 +15,7 @@ import {
   validatePolicyRationale,
   validatePolicyTargets,
   type AllocationPolicyKind,
+  type PlannedAllocation,
   type PolicyTarget,
 } from "./policy";
 import { findEntryMoney, lockEntry, toStatus } from "./repository";
@@ -72,12 +73,22 @@ export type ApplyAllocationPolicyInput = {
   policyId: string;
   /** One per target, in target order. Omitted for fixed-percentage and revenue-weighted. */
   measures?: readonly Decimal.Value[] | null;
+  /** Plan only: nothing is written (the inbox preview, M9-06). */
+  dryRun?: boolean;
+};
+
+export type PlannedAllocationRow = {
+  readonly dimensions: PlannedAllocation["dimensions"];
+  /** Exact signed amount, two decimals. */
+  readonly amount: string;
+  readonly measure: string;
 };
 
 export type AppliedAllocationPolicy = {
   readonly policyVersionId: string;
   readonly version: number;
   readonly created: number;
+  readonly planned: readonly PlannedAllocationRow[];
 };
 
 type VersionRow = {
@@ -368,6 +379,16 @@ export async function applyAllocationPolicy(
 
     const planned = planPolicyAllocations(policy.kind, version.targets, remainder, measures);
 
+    const rows = planned.map((row) => ({
+      dimensions: row.dimensions,
+      amount: fromCents(row.amountCents).toFixed(2),
+      measure: row.measure.toFixed(),
+    }));
+
+    if (input.dryRun) {
+      return { policyVersionId: version.id, version: version.version, created: 0, planned: rows };
+    }
+
     await tx.costAllocation.createMany({
       data: planned.map((row) => ({
         entryId: input.entryId,
@@ -378,6 +399,6 @@ export async function applyAllocationPolicy(
       })),
     });
 
-    return { policyVersionId: version.id, version: version.version, created: planned.length };
+    return { policyVersionId: version.id, version: version.version, created: planned.length, planned: rows };
   });
 }

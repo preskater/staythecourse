@@ -232,6 +232,14 @@ enum CostEntryStatus {
   FINALIZED
 }
 
+/// Lifecycle of an agent (M13-01). Not part of its configuration: changing it
+/// creates no version.
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+  RETIRED
+}
+
 /// How an allocation policy turns its targets into shares (M9-03).
 enum AllocationPolicyKind {
   MANUAL
@@ -250,8 +258,9 @@ model Workspace {
   createdAt DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt DateTime      @updatedAt @db.Timestamptz(3)
 
-  members WorkspaceMember[]
-  modules WorkspaceModule[]
+  members     WorkspaceMember[]
+  modules     WorkspaceModule[]
+  invitations WorkspaceInvitation[]
 
   accounts             Account[]
   categories           Category[]
@@ -282,6 +291,10 @@ model Workspace {
   costEntries          CostEntry[]
   aiBudgets            AiBudget[]
   aiSubscriptions      AiSubscription[]
+  costImportMappings   CostImportMapping[]
+  agents               Agent[]
+  aiCostLines          AiCostLine[]
+  aiUsageLines         AiUsageLine[]
   allocationPolicies   AllocationPolicy[]
 }
 
@@ -316,7 +329,38 @@ model WorkspaceMember {
   @@index([userId])
 }
 
-/// Sole owner of the dashboard. No public sign-up: users are created by the seed script.
+/// One pending or past invitation to join a workspace (M8-01).
+///
+/// The raw token is never stored: `tokenHash` is its SHA-256 digest, and the link is
+/// shown once to the inviter. A token is single-use (`acceptedAt`), expiring
+/// (`expiresAt`) and revocable (`revokedAt`); the state is derived, never stored twice.
+/// `acceptedByUserId` is the account the invitation was bound to, so acceptance is
+/// evidence rather than an inference from the invited address.
+model WorkspaceInvitation {
+  id               String        @id @default(cuid())
+  workspaceId      String
+  /// Normalised lower-case address the invitation is addressed to.
+  email            String
+  /// Never OWNER: ownership is transferred explicitly, not granted by invitation.
+  role             WorkspaceRole
+  tokenHash        String        @unique
+  invitedById      String?
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  expiresAt        DateTime      @db.Timestamptz(3)
+  acceptedAt       DateTime?     @db.Timestamptz(3)
+  acceptedByUserId String?
+  revokedAt        DateTime?     @db.Timestamptz(3)
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy  User?     @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedBy User?     @relation("InvitationAcceptor", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, email])
+  @@index([workspaceId, createdAt])
+}
+
+/// One account. The seed creates the first; accepting an invitation creates the others.
+/// There is still no public sign-up: a valid invitation token is required.
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -343,6 +387,8 @@ model User {
   auditEvents          AuditEvent[]
   memberships          WorkspaceMember[]
   sessions             Session[]
+  sentInvitations      WorkspaceInvitation[]   @relation("InvitationInviter")
+  acceptedInvitations  WorkspaceInvitation[]   @relation("InvitationAcceptor")
 }
 
 /// One signed-in browser session, persisted so the owner can revoke it.
@@ -1106,14 +1152,17 @@ model IntegrationConnection {
   createdAt             DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime            @updatedAt @db.Timestamptz(3)
 
-  user         User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   snapshots    ProjectSnapshot[]
   issues       IssueSnapshot[]
   milestones   MilestoneSnapshot[]
   cacheEntries ProviderCacheEntry[]
   ciRuns       CiRunSnapshot[]
   syncRuns     SyncRun[]
+  pullRequests PullRequestSnapshot[]
+  releases     ReleaseSnapshot[]
+  deployments  DeploymentSnapshot[]
 
   @@unique([workspaceId, provider, instanceUrl])
   @@index([workspaceId])
@@ -1301,6 +1350,166 @@ model CiRunSnapshot {
 /// Only a safe summary is stored, never a token, a response body or a provider URL
 /// carrying credentials. Retention is documented in `docs/architecture/overview.md`
 /// and applied by `npm run db:cleanup`.
+/// A pull request touched within the delivery window (M14-02), kept as history.
+///
+/// Unlike `IssueSnapshot`, closed and merged pull requests stay: delivery economics
+/// needs merge timing after the fact. Metadata only — no description, no comment text,
+/// no diff. Children (files, reviews, commits, issue links) are replaced on each read
+/// of the pull request. Retention: `DELIVERY_RETENTION_DAYS` on `providerUpdatedAt`.
+model PullRequestSnapshot {
+  id                String              @id @default(cuid())
+  connectionId      String
+  provider          IntegrationProvider
+  /// Provider node identifier, kept so a re-sync updates instead of duplicating.
+  externalId        String
+  /// Repository full name, for example "owner/repo".
+  repository        String
+  number            Int
+  title             String
+  url               String
+  authorLogin       String?
+  /// "OPEN", "CLOSED" or "MERGED", as the provider reports it.
+  state             String
+  isDraft           Boolean
+  baseBranch        String
+  headBranch        String
+  additions         Int
+  deletions         Int
+  changedFiles      Int
+  commitsCount      Int
+  /// Conversation comments, counted only: their text is never read.
+  commentsCount     Int
+  reviewsCount      Int
+  /// Instants at the provider.
+  openedAt          DateTime            @db.Timestamptz(3)
+  closedAt          DateTime?           @db.Timestamptz(3)
+  mergedAt          DateTime?           @db.Timestamptz(3)
+  /// First submitted review among those read; `null` when none was read.
+  firstReviewAt     DateTime?           @db.Timestamptz(3)
+  providerUpdatedAt DateTime            @db.Timestamptz(3)
+  /// True when a child list was cut by its bound: the counters above stay exact.
+  childrenTruncated Boolean             @default(false)
+  fetchedAt         DateTime            @db.Timestamptz(3)
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
+
+  connection IntegrationConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  files      PullRequestFile[]
+  reviews    PullRequestReview[]
+  commits    PullRequestCommit[]
+  issueLinks PullRequestIssueLink[]
+
+  @@unique([connectionId, externalId])
+  @@index([connectionId, repository, number])
+  @@index([connectionId, mergedAt])
+  @@index([connectionId, providerUpdatedAt])
+}
+
+/// A changed file of a pull request: path and line counts, never its content.
+model PullRequestFile {
+  id            String @id @default(cuid())
+  pullRequestId String
+  path          String
+  additions     Int
+  deletions     Int
+  /// "ADDED", "MODIFIED", "DELETED", "RENAMED"..., as the provider reports it.
+  changeType    String
+
+  pullRequest PullRequestSnapshot @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([pullRequestId, path])
+}
+
+/// A submitted review: author, verdict and instant. Never the review text.
+model PullRequestReview {
+  id            String    @id @default(cuid())
+  pullRequestId String
+  externalId    String
+  authorLogin   String?
+  /// "APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED"...
+  state         String
+  submittedAt   DateTime? @db.Timestamptz(3)
+
+  pullRequest PullRequestSnapshot @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([pullRequestId, externalId])
+}
+
+/// A commit of a pull request: identifier, author login and instant. No message.
+model PullRequestCommit {
+  id            String   @id @default(cuid())
+  pullRequestId String
+  sha           String
+  authorLogin   String?
+  committedAt   DateTime @db.Timestamptz(3)
+
+  pullRequest PullRequestSnapshot @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([pullRequestId, sha])
+}
+
+/// An issue the pull request declares it closes (GitHub's closing references).
+model PullRequestIssueLink {
+  id            String @id @default(cuid())
+  pullRequestId String
+  /// Repository of the issue, which may differ from the pull request's.
+  repository    String
+  issueNumber   Int
+  url           String
+
+  pullRequest PullRequestSnapshot @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([pullRequestId, repository, issueNumber])
+}
+
+/// A release created within the delivery window (M14-02). Kept as history.
+model ReleaseSnapshot {
+  id           String              @id @default(cuid())
+  connectionId String
+  provider     IntegrationProvider
+  externalId   String
+  repository   String
+  tagName      String
+  name         String?
+  url          String
+  isPrerelease Boolean
+  isDraft      Boolean
+  releasedAt   DateTime            @db.Timestamptz(3)
+  publishedAt  DateTime?           @db.Timestamptz(3)
+  fetchedAt    DateTime            @db.Timestamptz(3)
+  createdAt    DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime            @updatedAt @db.Timestamptz(3)
+
+  connection IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalId])
+  @@index([connectionId, repository, releasedAt])
+}
+
+/// A deployment created within the delivery window (M14-02), with its latest status.
+model DeploymentSnapshot {
+  id              String              @id @default(cuid())
+  connectionId    String
+  provider        IntegrationProvider
+  externalId      String
+  repository      String
+  environment     String
+  /// Deployed commit identifier.
+  sha             String
+  /// Latest status ("SUCCESS", "FAILURE", "IN_PROGRESS"...); `null` without status.
+  state           String?
+  deployedAt      DateTime            @db.Timestamptz(3)
+  statusUpdatedAt DateTime?           @db.Timestamptz(3)
+  fetchedAt       DateTime            @db.Timestamptz(3)
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @db.Timestamptz(3)
+
+  connection IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalId])
+  @@index([connectionId, repository, deployedAt])
+}
+
 model SyncRun {
   id           String        @id @default(cuid())
   connectionId String
@@ -1406,6 +1615,9 @@ model CostEntry {
   sourceRowNumber  Int?
   sourceEnteredBy  String?
   sourceCapturedAt DateTime        @db.Timestamptz(3)
+  /// CSV imports only (M9-05): hash of the source and the row's reference or
+  /// fingerprint. Unique per workspace, so re-importing a file creates nothing.
+  importKey        String?
   /// First calendar day covered, inclusive.
   periodStart      DateTime        @db.Date
   /// Last calendar day covered, inclusive.
@@ -1429,6 +1641,7 @@ model CostEntry {
   allocations CostAllocation[]
   renewal     AiSubscriptionRenewal?
 
+  @@unique([workspaceId, importKey])
   @@index([workspaceId, periodStart])
   @@index([workspaceId, status])
   @@index([workspaceId, projectId])
@@ -1547,6 +1760,27 @@ model CostAllocation {
   @@index([repository])
 }
 
+/// A reusable CSV column mapping, one per source and workspace (M9-05). Holds column
+/// headers and import settings only: never file content, amounts or secrets.
+model CostImportMapping {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  /// Free name of the source, for example `OpenAI factures`.
+  source          String
+  delimiter       String
+  hasHeader       Boolean  @default(true)
+  /// Canonical field → header name (see `src/modules/ai-costs/import.ts`).
+  columns         Json
+  /// Used when the file has no currency column.
+  defaultCurrency String?  @db.Char(3)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, source])
+}
+
 /// A named, workspace-scoped way to split costs (M9-03). Never deleted: archiving
 /// hides it from new applications while its versions keep explaining past splits.
 model AllocationPolicy {
@@ -1650,4 +1884,115 @@ model ExchangeRateSnapshot {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, baseCurrency, quoteCurrency, rateDate], map: "ExchangeRateSnapshot_workspace_pair_rateDate_idx")
+}
+
+/// An agent configuration tracked by the workspace (M13-01). The platform never runs
+/// it. Name and status live here; everything that changes behaviour lives in versions.
+model Agent {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  status      AgentStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions  AgentVersion[]
+
+  @@unique([workspaceId, name])
+}
+
+/// An immutable configuration snapshot. Insert-only: runs (M13-02) reference the
+/// exact version that produced them. `fingerprint` is the SHA-256 of the canonical
+/// configuration (see `src/modules/agents/config.ts`).
+model AgentVersion {
+  id               String   @id @default(cuid())
+  agentId          String
+  version          Int
+  /// `{ primary: { provider, model }, fallbacks: [{ provider, model }] }`.
+  modelPolicy      Json
+  tools            String[]
+  /// A workspace member's user id, checked at write time. No foreign key, so a
+  /// version stays readable after the member leaves.
+  ownerId          String
+  /// `owner/repository` names: access metadata, never credentials.
+  repositoryScopes String[]
+  fingerprint      String   @db.Char(64)
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+  @@index([agentId, fingerprint])
+}
+
+/// One cost line imported from an AI provider (M11-02): metadata only, never a prompt,
+/// a completion or any content. Keyed by the connection and the provider's stable line
+/// key, so a re-run updates the line instead of adding one.
+model AiCostLine {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  /// Stable identifier of the provider connection. Until AI connections are stored
+  /// (M11-05) the caller chooses it; it then becomes that connection's id.
+  connectionKey String
+  /// `AiProvider` code, for example `OPENAI`.
+  provider      String
+  externalId    String
+  /// Provider project or workspace; `null` means unknown.
+  scopeId       String?
+  model         String?
+  /// UTC instants of the provider bucket: start inclusive, end exclusive.
+  periodStart   DateTime @db.Timestamptz(3)
+  periodEnd     DateTime @db.Timestamptz(3)
+  /// Provider precision, before any rounding to cents in the ledger. Signed.
+  amount        Decimal  @db.Decimal(24, 10)
+  currency      String   @db.Char(3)
+  /// Known dimensions only (`apiKeyId`, `lineItem`...); an absent key is unknown.
+  dimensions    Json     @default("{}")
+  /// Instant of the synchronisation that last wrote the line.
+  fetchedAt     DateTime @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, connectionKey, externalId])
+  @@index([workspaceId, connectionKey, periodStart])
+}
+
+/// Imported AI provider usage lines (M11-03): token and request counts, metadata only.
+model AiUsageLine {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  /// Same meaning as `AiCostLine.connectionKey`.
+  connectionKey     String
+  /// `AiProvider` code, for example `ANTHROPIC`.
+  provider          String
+  externalId        String
+  /// Provider project or workspace; `null` means unknown.
+  scopeId           String?
+  model             String
+  /// UTC instants of the provider bucket: start inclusive, end exclusive.
+  periodStart       DateTime @db.Timestamptz(3)
+  periodEnd         DateTime @db.Timestamptz(3)
+  /// 64-bit: one busy day of one model can exceed 2^31 tokens.
+  inputTokens       BigInt
+  outputTokens      BigInt
+  /// Part of `inputTokens` read from a prompt cache (M11-04); `null` means not reported.
+  cachedInputTokens BigInt?
+  /// Part of `outputTokens` spent reasoning (M11-04); `null` means not reported.
+  reasoningTokens   BigInt?
+  /// `null` when the provider does not report request counts.
+  requests          Int?
+  /// Known dimensions only (`serviceTier`...); an absent key is unknown.
+  dimensions        Json     @default("{}")
+  /// Instant of the synchronisation that last wrote the line.
+  fetchedAt         DateTime @db.Timestamptz(3)
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, connectionKey, externalId])
+  @@index([workspaceId, connectionKey, periodStart])
 }
