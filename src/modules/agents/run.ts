@@ -1,4 +1,5 @@
 import { looksLikeSecret } from "@/modules/ai-costs/source";
+import { validateOutcome, validateTaskType, type AgentRunOutcome, type AgentTaskType } from "./taxonomy";
 
 /**
  * Agent run contract (M13-02). Pure, no I/O.
@@ -41,6 +42,8 @@ const ALLOWED_KEYS = new Set<string>([
   "agentVersionId",
   "deliveryLinks",
   "costEntryIds",
+  "taskType",
+  "outcome",
   ...RUN_TRACKED_FIELDS,
 ]);
 
@@ -69,6 +72,9 @@ export type AgentRunWrite = {
   readonly toolCalls?: number;
   readonly result?: AgentRunResult;
   readonly initiator?: string;
+  /** Taxonomy (M13-03), set by the adapter; `UNKNOWN` is an explicit value. */
+  readonly taskType?: AgentTaskType;
+  readonly outcome?: AgentRunOutcome;
   /** Added to the stored links, never replacing them. */
   readonly deliveryLinks: readonly string[];
   /** Added to the stored cost links, never replacing them. */
@@ -174,6 +180,8 @@ export function validateAgentRun(input: AgentRunInput): AgentRunWrite {
       return value as AgentRunResult;
     }),
     initiator: optional("initiator", reference),
+    taskType: optional("taskType", validateTaskType),
+    outcome: optional("outcome", validateOutcome),
     deliveryLinks: list(input.deliveryLinks, "deliveryLinks", MAX_DELIVERY_LINKS, deliveryLink),
     costEntryIds: list(input.costEntryIds, "costEntryIds", MAX_COST_LINKS, (value, index) =>
       reference(value, `costEntryIds[${index}]`),

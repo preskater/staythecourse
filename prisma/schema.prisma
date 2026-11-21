@@ -247,6 +247,35 @@ enum AgentRunResult {
   CANCELLED
 }
 
+/// What an agent run was asked to do (M13-03). Codes and meanings live in
+/// `src/modules/agents/taxonomy.ts`; UNKNOWN is never guessed.
+enum AgentTaskType {
+  IMPLEMENTATION
+  TEST
+  REVIEW
+  DOCUMENTATION
+  DEBUGGING
+  ANALYSIS
+  UNKNOWN
+}
+
+/// What became of an agent run's work (M13-03), distinct from its technical result.
+enum AgentRunOutcome {
+  ACCEPTED
+  PARTIAL
+  REJECTED
+  FAILED
+  CANCELLED
+  SUPERSEDED
+  UNKNOWN
+}
+
+/// Who set an agent run's task type and outcome.
+enum AgentClassificationSource {
+  ADAPTER
+  MANUAL
+}
+
 /// How an allocation policy turns its targets into shares (M9-03).
 enum AllocationPolicyKind {
   MANUAL
@@ -2008,25 +2037,29 @@ model ProjectMapping {
 /// completion content. Every optional field left `null` is unknown, never zero;
 /// a run missing any of them reads as partial (see `src/modules/agents/run.ts`).
 model AgentRun {
-  id             String          @id @default(cuid())
-  workspaceId    String
-  agentVersionId String
+  id                   String                     @id @default(cuid())
+  workspaceId          String
+  agentVersionId       String
   /// Dedupe key from the reporting system: re-ingesting it updates the run.
-  externalRef    String
-  traceId        String?
-  startedAt      DateTime?       @db.Timestamptz(3)
-  endedAt        DateTime?       @db.Timestamptz(3)
-  inputTokens    Int?
-  outputTokens   Int?
-  retries        Int?
-  toolCalls      Int?
-  result         AgentRunResult?
+  externalRef          String
+  traceId              String?
+  startedAt            DateTime?                  @db.Timestamptz(3)
+  endedAt              DateTime?                  @db.Timestamptz(3)
+  inputTokens          Int?
+  outputTokens         Int?
+  retries              Int?
+  toolCalls            Int?
+  result               AgentRunResult?
   /// Who or what started the run: a member id, `ci`, `schedule`...
-  initiator      String?
+  initiator            String?
   /// Pull request, issue or commit URLs the run delivered to.
-  deliveryLinks  String[]        @default([])
-  createdAt      DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime        @updatedAt @db.Timestamptz(3)
+  deliveryLinks        String[]                   @default([])
+  taskType             AgentTaskType              @default(UNKNOWN)
+  outcome              AgentRunOutcome            @default(UNKNOWN)
+  /// `null` until an adapter or a person sets the task type or outcome.
+  classificationSource AgentClassificationSource?
+  createdAt            DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                   @updatedAt @db.Timestamptz(3)
 
   workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   agentVersion AgentVersion   @relation(fields: [agentVersionId], references: [id], onDelete: Cascade)
