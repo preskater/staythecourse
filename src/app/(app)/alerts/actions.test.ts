@@ -6,6 +6,7 @@ const dismissAlertMock = vi.fn();
 const saveAlertRulesMock = vi.fn();
 const refreshAlertsMock = vi.fn();
 const revalidatePathMock = vi.fn();
+const recordAuditMock = vi.fn();
 
 vi.mock("@/lib/auth/guard", () => ({ requirePermission: (...args: unknown[]) => requirePermissionMock(...args) }));
 vi.mock("@/modules/alerts/repository", () => ({
@@ -14,6 +15,9 @@ vi.mock("@/modules/alerts/repository", () => ({
 }));
 vi.mock("@/modules/alerts/refresh", () => ({
   refreshAlerts: (...args: unknown[]) => refreshAlertsMock(...args),
+}));
+vi.mock("@/modules/audit/repository", () => ({
+  recordAuditEventSafely: (...args: unknown[]) => recordAuditMock(...args),
 }));
 vi.mock("next/cache", () => ({
   revalidatePath: (...args: unknown[]) => revalidatePathMock(...args),
@@ -40,9 +44,12 @@ const VALID_RULES = {
   unusualExpense: { enabled: true, thresholdAmount: "500", thresholdCurrency: "EUR" },
   staleIntegration: { enabled: true, thresholdDays: "2" },
   overdueEvent: { enabled: true, thresholdDays: "0" },
+  aiBudgetOverrun: { enabled: true, thresholdPercent: "5" },
+  aiBudgetThreshold: { enabled: true, thresholdPercent: "75" },
 };
 
 beforeEach(() => {
+  recordAuditMock.mockReset();
   requirePermissionMock.mockReset().mockResolvedValue(OWNER);
   dismissAlertMock.mockReset().mockResolvedValue(true);
   saveAlertRulesMock.mockReset().mockResolvedValue(undefined);
@@ -120,7 +127,19 @@ describe("saveAlertRulesAction", () => {
       "UNUSUAL_EXPENSE",
       "STALE_INTEGRATION",
       "OVERDUE_EVENT",
+      "AI_BUDGET_OVERRUN",
+      "AI_BUDGET_THRESHOLD",
     ]);
+    expect(configs.find((config) => config.kind === "AI_BUDGET_THRESHOLD")?.thresholdPercent?.toString()).toBe("75");
+    // The rule change is audited, with no threshold value in the trail.
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: OWNER.workspace.id,
+        action: "alert_rules.save",
+        entityType: "ALERT_RULE",
+        metadata: { enabledCount: 8 },
+      }),
+    );
 
     const lowBalance = configs[0];
     expect(lowBalance.thresholdAmount?.toFixed(2)).toBe("100.00");

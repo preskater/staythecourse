@@ -264,6 +264,8 @@ function ruleRowData(rule: AlertRuleConfig): {
     case "BUDGET_OVERRUN":
       return { ...empty, thresholdPercent: rule.thresholdPercent?.toFixed(2) ?? null };
     case "BUDGET_THRESHOLD":
+    case "AI_BUDGET_OVERRUN":
+    case "AI_BUDGET_THRESHOLD":
       return { ...empty, thresholdPercent: rule.thresholdPercent?.toFixed(2) ?? null };
     case "STALE_INTEGRATION":
     case "OVERDUE_EVENT":

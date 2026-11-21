@@ -154,6 +154,29 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
         fetchedAt: date,
       },
     ],
+    upsertAiUsageLines: [
+      OWNER,
+      {
+        connectionKey: "fixture",
+        provider: "ANTHROPIC",
+        records: [
+          {
+            externalId: "fixture",
+            scopeId: null,
+            model: "fixture",
+            periodStart: date,
+            periodEnd: date,
+            inputTokens: 1,
+            outputTokens: 1,
+            cachedInputTokens: null,
+            reasoningTokens: null,
+            requests: null,
+            dimensions: {},
+          },
+        ],
+        fetchedAt: date,
+      },
+    ],
     createCostEntry: [
       OWNER,
       {
@@ -238,6 +261,18 @@ function argumentsFor(name: string, fn: (...args: unknown[]) => unknown): unknow
       OWNER,
       { baseCurrency: "USD", quoteCurrency: "EUR", asOf: date },
     ],
+    readAiBudgetSpend: [
+      OWNER,
+      [{ id: "fixture", dimension: "project", dimensionValue: "fixture", amount: new Decimal("1.00"), currency: "EUR" }],
+      date,
+      date,
+    ],
+    readSubscriptionMetered: [
+      OWNER,
+      [{ id: "fixture", provider: "fixture", currency: "EUR", frequency: "MONTHLY", startDate: date, cancelledOn: null, allowance: new Decimal("1.00") }],
+      new Date("2026-02-01T00:00:00.000Z"),
+    ],
+    readForecastInputs: [OWNER, { start: date, end: date, today: date }],
     readCostExplorer: [
       OWNER,
       { dimensions: {}, from: date, to: date, groupBy: "provider", page: 1 },
@@ -272,6 +307,8 @@ const MODULES = {
   integrations: () => import("@/modules/integrations/repository"),
   aiCosts: () => import("@/modules/ai-costs/repository"),
   projectMappings: () => import("@/modules/micro-business/mapping.repository"),
+  profitability: () => import("@/modules/profitability/repository"),
+  aiSubscriptions: () => import("@/modules/ai-costs/subscription.repository"),
   agents: () => import("@/modules/agents/repository"),
 };
 
