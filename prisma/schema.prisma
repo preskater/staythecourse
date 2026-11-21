@@ -240,6 +240,13 @@ enum AgentStatus {
   RETIRED
 }
 
+/// Final outcome of an agent run. `null` on the run means not reported yet.
+enum AgentRunResult {
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
 /// How an allocation policy turns its targets into shares (M9-03).
 enum AllocationPolicyKind {
   MANUAL
@@ -293,6 +300,7 @@ model Workspace {
   aiSubscriptions      AiSubscription[]
   costImportMappings   CostImportMapping[]
   agents               Agent[]
+  agentRuns            AgentRun[]
   aiCostLines          AiCostLine[]
   aiUsageLines         AiUsageLine[]
   allocationPolicies   AllocationPolicy[]
@@ -1639,6 +1647,7 @@ model CostEntry {
 
   workspace   Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   allocations CostAllocation[]
+  agentRuns   AgentRunCost[]
   renewal     AiSubscriptionRenewal?
 
   @@unique([workspaceId, importKey])
@@ -1920,7 +1929,8 @@ model AgentVersion {
   fingerprint      String   @db.Char(64)
   createdAt        DateTime @default(now()) @db.Timestamptz(3)
 
-  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent Agent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  runs  AgentRun[]
 
   @@unique([agentId, version])
   @@index([agentId, fingerprint])
@@ -1958,6 +1968,50 @@ model AiCostLine {
 
   @@unique([workspaceId, connectionKey, externalId])
   @@index([workspaceId, connectionKey, periodStart])
+}
+
+/// One execution of an agent version (M13-02). Metadata only: no prompt or
+/// completion content. Every optional field left `null` is unknown, never zero;
+/// a run missing any of them reads as partial (see `src/modules/agents/run.ts`).
+model AgentRun {
+  id             String          @id @default(cuid())
+  workspaceId    String
+  agentVersionId String
+  /// Dedupe key from the reporting system: re-ingesting it updates the run.
+  externalRef    String
+  traceId        String?
+  startedAt      DateTime?       @db.Timestamptz(3)
+  endedAt        DateTime?       @db.Timestamptz(3)
+  inputTokens    Int?
+  outputTokens   Int?
+  retries        Int?
+  toolCalls      Int?
+  result         AgentRunResult?
+  /// Who or what started the run: a member id, `ci`, `schedule`...
+  initiator      String?
+  /// Pull request, issue or commit URLs the run delivered to.
+  deliveryLinks  String[]        @default([])
+  createdAt      DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @db.Timestamptz(3)
+
+  workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentVersion AgentVersion   @relation(fields: [agentVersionId], references: [id], onDelete: Cascade)
+  costs        AgentRunCost[]
+
+  @@unique([workspaceId, externalRef])
+  @@index([agentVersionId])
+}
+
+/// Run <-> cost entry link, readable both ways. A run with no link has an unknown cost.
+model AgentRunCost {
+  runId       String
+  costEntryId String
+
+  run       AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  costEntry CostEntry @relation(fields: [costEntryId], references: [id], onDelete: Cascade)
+
+  @@id([runId, costEntryId])
+  @@index([costEntryId])
 }
 
 /// Imported AI provider usage lines (M11-03): token and request counts, metadata only.
