@@ -128,6 +128,9 @@ services:
       # writes the password when it creates the account, so a password changed from
       # the Compte page survives a restart.
       SEED_OWNER_FORCE_PASSWORD: ${SEED_OWNER_FORCE_PASSWORD:-false}
+      # Initial modules of the owner's personal workspace. Defaults to the catalogue
+      # set; only missing rows are created, so a module disabled later stays disabled.
+      SEED_WORKSPACE_MODULES: ${SEED_WORKSPACE_MODULES:-budget,real-estate,development}
     command: ["npx", "prisma", "db", "seed"]
     networks:
       - app-network

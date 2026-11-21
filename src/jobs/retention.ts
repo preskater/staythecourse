@@ -1,6 +1,6 @@
 import { getPrisma } from "@/lib/db";
 import { AUDIT_RETENTION_DAYS } from "@/modules/audit/domain";
-import { pruneSyncRuns } from "@/modules/integrations/repository";
+import { pruneDeliveryHistory, pruneSyncRuns } from "@/modules/integrations/repository";
 
 // Re-exported for the operator script and the page: the constant lives in the audit
 // domain so reading it never pulls the database client into a caller.
@@ -65,6 +65,28 @@ export async function cleanUpAuditEvents(
       where: { workspaceId: workspace.id, createdAt: { lt: olderThan } },
     });
     deleted += result.count;
+  }
+
+  return { workspaces: workspaces.length, deleted };
+}
+
+/**
+ * Delivery history (M14-02) is history, not current state: 13 months covers a year of
+ * comparisons plus the month in progress. Pull requests are aged by their last update
+ * at the provider, releases and deployments by their creation.
+ */
+export const DELIVERY_RETENTION_DAYS = 395;
+
+export async function cleanUpDeliveryHistory(
+  options: { now?: Date; retentionDays?: number } = {},
+): Promise<{ workspaces: number; deleted: number }> {
+  const now = options.now ?? new Date();
+  const olderThan = retentionCutoff(now, options.retentionDays ?? DELIVERY_RETENTION_DAYS);
+  const workspaces = await getPrisma().workspace.findMany({ select: { id: true } });
+
+  let deleted = 0;
+  for (const workspace of workspaces) {
+    deleted += await pruneDeliveryHistory({ workspaceId: workspace.id, olderThan });
   }
 
   return { workspaces: workspaces.length, deleted };

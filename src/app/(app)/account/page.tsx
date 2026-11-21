@@ -48,7 +48,7 @@ export default async function AccountPage() {
     <>
       <PageHeader
         title="Compte"
-        description="Adresse, nom et mot de passe du propriétaire. Aucune inscription publique : ce compte est le seul."
+        description="Votre adresse, votre nom et votre mot de passe. Aucune inscription publique : un compte est créé par le script de départ ou par une invitation."
         actions={
           <Link
             href="/diagnostics"
@@ -68,7 +68,7 @@ export default async function AccountPage() {
 
       <Card
         title="Identité"
-        description="Ces deux valeurs viennent du script de départ (SEED_OWNER_EMAIL et SEED_OWNER_NAME) : elles ne se modifient pas depuis cette page."
+        description="Le compte de départ vient de SEED_OWNER_EMAIL et SEED_OWNER_NAME ; un compte invité reprend l'adresse de l'invitation. Ces valeurs ne se modifient pas depuis cette page."
       >
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <div>

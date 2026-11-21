@@ -5,6 +5,7 @@ import { SearchForm } from "@/components/search-form";
 import { UtilityNav } from "@/components/utility-nav";
 import { requireUser } from "@/lib/auth/guard";
 import { moduleNavLinks } from "@/modules/catalog/catalog";
+import { hasPermission } from "@/modules/identity/permissions";
 import { signOutAction } from "../login/actions";
 
 /**
@@ -39,6 +40,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ];
   const utilityLinks: NavLink[] = [
     { href: "/audit", label: "Journal" },
+    // Membership management is not a module: a household shares the workspace it
+    // already has. Only the roles that can manage it see the entry.
+    ...(hasPermission(user.workspace.role, "manage-members")
+      ? [{ href: "/members", label: "Membres" }]
+      : []),
     { href: "/modules", label: "Modules" },
     { href: "/account", label: "Compte" },
   ];

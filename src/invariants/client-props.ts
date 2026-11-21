@@ -48,6 +48,8 @@ export type ClientModules = {
   "src/app/(app)/ai-costs/ai-budget-form.tsx": typeof import("@/app/(app)/ai-costs/ai-budget-form");
   "src/app/(app)/ai-costs/cancel-subscription-button.tsx": typeof import("@/app/(app)/ai-costs/cancel-subscription-button");
   "src/app/(app)/ai-costs/delete-ai-budget-button.tsx": typeof import("@/app/(app)/ai-costs/delete-ai-budget-button");
+  "src/app/(app)/ai-costs/import/cost-csv-importer.tsx": typeof import("@/app/(app)/ai-costs/import/cost-csv-importer");
+  "src/app/(app)/ai-costs/inbox/inbox-table.tsx": typeof import("@/app/(app)/ai-costs/inbox/inbox-table");
   "src/app/(app)/ai-costs/subscription-form.tsx": typeof import("@/app/(app)/ai-costs/subscription-form");
   "src/app/(app)/alerts/dismiss-alert-button.tsx": typeof import("@/app/(app)/alerts/dismiss-alert-button");
   "src/app/(app)/alerts/refresh-alerts-button.tsx": typeof import("@/app/(app)/alerts/refresh-alerts-button");
@@ -77,6 +79,8 @@ export type ClientModules = {
   "src/app/(app)/budget/transfer-form.tsx": typeof import("@/app/(app)/budget/transfer-form");
   "src/app/(app)/budget/work-calendar.tsx": typeof import("@/app/(app)/budget/work-calendar");
   "src/app/(app)/integrations/issue-filters-form.tsx": typeof import("@/app/(app)/integrations/issue-filters-form");
+  "src/app/(app)/members/invite-form.tsx": typeof import("@/app/(app)/members/invite-form");
+  "src/app/(app)/members/member-controls.tsx": typeof import("@/app/(app)/members/member-controls");
   "src/app/(app)/micro-business/archive-toggle.tsx": typeof import("@/app/(app)/micro-business/archive-toggle");
   "src/app/(app)/micro-business/client-form.tsx": typeof import("@/app/(app)/micro-business/client-form");
   "src/app/(app)/micro-business/project-form.tsx": typeof import("@/app/(app)/micro-business/project-form");
@@ -96,6 +100,8 @@ export type ClientModules = {
   "src/app/(app)/real-estate/remove-property-button.tsx": typeof import("@/app/(app)/real-estate/remove-property-button");
   "src/app/(app)/real-estate/sale-form.tsx": typeof import("@/app/(app)/real-estate/sale-form");
   "src/app/(app)/real-estate/valuation-form.tsx": typeof import("@/app/(app)/real-estate/valuation-form");
+  "src/app/invitation/[token]/accept-form.tsx": typeof import("@/app/invitation/[token]/accept-form");
+  "src/components/action-menu.tsx": typeof import("@/components/action-menu");
   "src/components/forms.tsx": typeof import("@/components/forms");
   "src/components/keyboard-shortcuts.tsx": typeof import("@/components/keyboard-shortcuts");
   "src/components/main-nav.tsx": typeof import("@/components/main-nav");
